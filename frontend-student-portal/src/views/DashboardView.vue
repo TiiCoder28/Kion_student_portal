@@ -103,8 +103,8 @@ const sendMessage = async () => {
             `${API_BASE_URL}/api/chat`, 
             { 
                 message: userQuestion,
-                chat_type: chatHistory[currentChat.value].type,  // Pass the chat type
-                session_id: chatHistory[currentChat.value].session_id  // Pass the session ID
+                chat_type: chatHistory[currentChat.value].type,  
+                session_id: chatHistory[currentChat.value].session_id  
             },
             { headers: { "Content-Type": "application/json" } } 
         );
@@ -166,7 +166,7 @@ const loadChat = (index) => {
     messages.splice(0, messages.length);
     messages.push({
         sender: "ai",
-        text: `Loading previous conversation: ${chatHistory[index].title}`
+        text: `Let me offer assistance on: ${chatHistory[index].title}`
     });
 };
 

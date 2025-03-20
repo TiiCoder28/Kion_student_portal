@@ -14,57 +14,77 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Dictionary to store conversation history for each session
 conversation_history = {}
 
+# System prompts for different assistant modes
+assistant_modes = {
+    "assignment_help": (
+        "You are a structured AI tutor helping students step by step with assignments. "
+        "Follow this format in responses: \n"
+        "1. **Understanding the problem**: Ask clarifying questions.\n"
+        "2. **Concept explanation**: Provide definitions and examples.\n"
+        "3. **Suggested approach**: Outline a step-by-step solution strategy.\n"
+        "4. **Example solution**: Offer a partial example without just giving the full answer.\n"
+        "5. **Next Steps**: Ask if the student needs more clarification or another example."
+    ),
+    "study_tips": (
+        "You are a structured study coach providing effective learning strategies.\n"
+        "- Start by asking about the student's study habits and goals.\n"
+        "- Provide a personalized study plan using methods like active recall and spaced repetition.\n"
+        "- Offer time management strategies.\n"
+        "- Suggest tools and resources to enhance productivity."
+    ),
+    "essay_helper": (
+        "You are an AI assistant helping students plan and outline their essays.\n"
+        "Follow this structured approach: \n"
+        "1. **Understand the topic**: Ask the student for their thesis or main idea.\n"
+        "2. **Outline the structure**: Suggest an introduction, body paragraphs, and conclusion.\n"
+        "3. **Provide writing tips**: Explain how to strengthen arguments with evidence.\n"
+        "4. **Suggest improvements**: Offer constructive feedback on clarity and flow."
+    )
+}
+
 @chat_bp.route("/chat", methods=["POST"])
 def chat():
-    # Get the JSON data from the request
+    """Handles structured AI assistant requests."""
     data = request.json
-    user_message = data.get('message', '')
-    chat_type = data.get('chat_type', 'assignment_help')  # Default to assignment help
-    session_id = data.get('session_id', 'default_session')  # Unique session ID for each chat
+    user_message = data.get('message', '').strip()
+    mode = data.get('mode', 'assignment_help')  # Default to assignment help
+    session_id = data.get('session_id', 'default_session')  # Unique session ID
 
-    # Validate the input
+    # Validate input
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    # Define system prompts for each chat type
-    system_prompts = {
-        "assignment_help": "You are a helpful assistant designed to assist high school students with their assignments. Ask probing questions to find out where they need assistance.",
-        "study_tips": "You are a helpful assistant designed to assist high school students and offer study tips based on their study style, the course they chose, when the test or exam is, and how often they'd like to study. Ask further probing questions, then offer them study tips for effective and successful studying."
-    }
-
-    # Get the system prompt based on the chat type
-    system_prompt = system_prompts.get(chat_type, system_prompts["assignment_help"])
+    # Get the appropriate assistant mode
+    system_prompt = assistant_modes.get(mode, assistant_modes["assignment_help"])
 
     # Initialize conversation history for the session if it doesn't exist
     if session_id not in conversation_history:
-        conversation_history[session_id] = [
-            {"role": "system", "content": system_prompt}
-        ]
+        conversation_history[session_id] = [{"role": "system", "content": system_prompt}]
 
-    # Add the user's message to the conversation history
+    # Add user's message to the conversation history
     conversation_history[session_id].append({"role": "user", "content": user_message})
 
     try:
-        # Call the OpenAI API using the chat completions endpoint
+        # Call OpenAI API using structured responses
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Use a valid model like gpt-3.5-turbo or gpt-4
-            messages=conversation_history[session_id],  # Pass the entire conversation history
-            max_tokens=150,  # Adjust as needed
-            temperature=0.7  # Adjust as needed
+            model="gpt-4o-mini", 
+            messages=conversation_history[session_id],
+            temperature=0.3
         )
 
-        # Extract the AI's response
+        # Extract AI's structured response
         ai_response = response.choices[0].message.content.strip()
 
-        # Add the AI's response to the conversation history
+        # Add AI's response to conversation history
         conversation_history[session_id].append({"role": "assistant", "content": ai_response})
 
-        # Return the AI's response as JSON
-        return jsonify({"response": ai_response})
+        # Return structured JSON response
+        return jsonify({
+            "mode": mode,
+            "response": ai_response,
+            "next_steps": "Would you like further clarification or an example?"
+        })
 
     except Exception as e:
-        # Log the full error for debugging
         print(f"Error calling OpenAI API: {e}")
-        print(f"Error type: {type(e)}")
-        print(f"Error details: {e.args}")
         return jsonify({"error": "An error occurred while processing your request"}), 500
