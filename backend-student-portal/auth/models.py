@@ -1,4 +1,4 @@
-from app import db  # Import the shared SQLAlchemy instance
+from app.database import db  # Import the shared SQLAlchemy instance
 from flask_bcrypt import generate_password_hash, check_password_hash
 
 class User(db.Model):

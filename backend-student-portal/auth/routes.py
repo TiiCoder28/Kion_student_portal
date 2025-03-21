@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
 from .models import User  # Import the User model from the models module
-from app import db  # Import the shared SQLAlchemy instance
+from app.database import db  # Import the shared SQLAlchemy instance
 
 auth_bp = Blueprint('auth', __name__)
 
