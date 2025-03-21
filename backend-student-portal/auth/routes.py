@@ -28,7 +28,12 @@ def signup():
     db.session.add(new_user)
     db.session.commit()
 
-    return jsonify({"message": "User created successfully"}), 201
+    # Generate a JWT token for the new user
+    access_token = create_access_token(identity=new_user.id)
+    return jsonify({
+        "message": "User created successfully",
+        "access_token": access_token  # Return the token
+    }), 201
 
 @auth_bp.route('/login', methods=['POST'])
 def login():

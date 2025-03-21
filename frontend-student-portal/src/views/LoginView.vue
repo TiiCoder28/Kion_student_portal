@@ -29,15 +29,33 @@
   </template>
   
   <script setup>
-  import { ref } from "vue";
-  
-  const email = ref("");
-  const password = ref("");
-  
-  const handleLogin = () => {
-    console.log("Login submitted!");
-  };
-  </script>
+import { ref } from "vue";
+import axios from "axios";
+import { useRouter } from "vue-router";
+
+const email = ref("");
+const password = ref("");
+const router = useRouter();
+
+const handleLogin = async () => {
+  try {
+    const response = await axios.post("http://localhost:5000/auth/login", {
+      email: email.value,
+      password: password.value,
+    });
+
+    if (response.status === 200) {
+      const { access_token } = response.data;
+      localStorage.setItem("access_token", access_token); // Store the token
+      alert("Login successful!");
+      router.push("/dashboard"); // Redirect to dashboard
+    }
+  } catch (error) {
+    console.error("Login error:", error.response?.data || error.message);
+    alert(error.response?.data?.error || "Login failed. Please try again.");
+  }
+};
+</script>
   
   <style scoped>
   .signup-container {

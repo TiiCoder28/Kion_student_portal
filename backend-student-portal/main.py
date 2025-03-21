@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from app.database import db
+from flask_jwt_extended import JWTManager
 from auth.models import User  # Import the User model
 from dotenv import load_dotenv
 import os
@@ -18,6 +19,11 @@ def create_app():
         raise ValueError("DATABASE_URI not found in .env file")
     app.config['SQLALCHEMY_DATABASE_URI'] = DB_URI
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY")
+    if not app.config['JWT_SECRET_KEY']:
+        raise ValueError("JWT_SECRET_KEY not found in .env file")
+    jwt = JWTManager(app)  # Initialize JWTManager
 
     # Initialize database
     db.init_app(app)
@@ -55,10 +61,8 @@ app = create_app()
 
 if __name__ == "__main__":
     with app.app_context():
-        print("\n⏳ Attempting to create tables...")
         try:
             db.create_all()
-            print("✅ SUCCESS: Tables created (if they didn't exist)")
             
             # List tables using SQLAlchemy 2.0+ compatible method
             from sqlalchemy import inspect

@@ -37,6 +37,8 @@
   
   <script setup>
   import { ref } from "vue";
+  import axios from "axios";
+  import { useRouter } from "vue-router";
   
   const firstName = ref("");
   const lastName = ref("");
@@ -44,10 +46,39 @@
   const confirmEmail = ref("");
   const password = ref("");
   const confirmPassword = ref("");
+  const router = useRouter();
   
-  const handleSignup = () => {
+  const handleSignup = async () => {
+    // Basic validation
+    if (email.value !== confirmEmail.value) {
+      alert("Emails do not match!");
+      return;
+    }
+    if (password.value !== confirmPassword.value) {
+      alert("Passwords do not match!");
+      return;
+    }
   
-    console.log("Signup submitted!");
+    try {
+      const response = await axios.post("http://localhost:5000/auth/signup", {
+        first_name: firstName.value,
+        last_name: lastName.value,
+        email: email.value,
+        password: password.value,
+      });
+  
+      if (response.status === 201) {
+        // Save the JWT token to localStorage
+        const { access_token } = response.data;
+        localStorage.setItem("access_token", access_token);
+  
+        // Redirect to the dashboard
+        router.push("/dashboard");
+      }
+    } catch (error) {
+      console.error("Signup error:", error.response?.data || error.message);
+      alert(error.response?.data?.error || "Signup failed. Please try again.");
+    }
   };
   </script>
   
