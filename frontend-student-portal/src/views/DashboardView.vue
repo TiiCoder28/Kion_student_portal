@@ -7,7 +7,7 @@
         <div class="user-avatar">
           <img src="../assets/images/student-avatar.jpeg" alt="User" />
         </div>
-        <div class="username">User name</div>
+        <h1>Welcome, {{ user.first_name || 'User' }} {{ user.last_name || '' }}!</h1>
       </div>
       <div class="chat-history">
         <h3>Chat History</h3>
@@ -71,6 +71,7 @@ import { ref, reactive, onMounted } from "vue";
 import axios from "axios";
 
 const API_BASE_URL = "http://127.0.0.1:5000"; 
+const user = ref({ first_name: "", last_name: "" }); // Initialize with empty values
 
 const userInput = ref("");
 const currentChat = ref(0);
@@ -80,6 +81,22 @@ const messages = reactive([
         text: "Hello! I'm your Kion Student Assistant. How can I help you today?"
     }
 ]);
+
+const fetchUserDetails = async () => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/auth/user`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("access_token")}`, // Include the JWT token
+      },
+    });
+
+    if (response.data) {
+      user.value = response.data; // Update the user ref with the fetched data
+    }
+  } catch (error) {
+    console.error("Error fetching user details:", error.response?.data || error.message);
+  }
+};
 
 const chatHistory = reactive([
     { title: "Assignment Help", date: "Mar 12, 2025", type: "assignment_help", session_id: "assignment_help_1" },
@@ -171,7 +188,7 @@ const loadChat = (index) => {
 };
 
 onMounted(() => {
-    scrollToBottom();
+  fetchUserDetails(); // Fetch user details when the component mounts
 });
 </script>
 
@@ -182,6 +199,11 @@ onMounted(() => {
     height: 100vh;
     background-color: #f9f9f9;
   }
+
+  h1 {
+  font-size: 2rem;
+  color: white;
+}
   
   .sidebar {
     width: 280px;

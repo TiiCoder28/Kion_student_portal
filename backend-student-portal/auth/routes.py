@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from .models import User  # Import the User model from the models module
 from app.database import db  # Import the shared SQLAlchemy instance
 
@@ -32,7 +32,11 @@ def signup():
     access_token = create_access_token(identity=new_user.id)
     return jsonify({
         "message": "User created successfully",
-        "access_token": access_token  # Return the token
+        "access_token": access_token,
+        "user": {  # Include user details in the response
+            "first_name": new_user.first_name,
+            "last_name": new_user.last_name,
+        }
     }), 201
 
 @auth_bp.route('/login', methods=['POST'])
@@ -48,4 +52,23 @@ def login():
 
     # Generate a JWT token
     access_token = create_access_token(identity=user.id)
-    return jsonify({"access_token": access_token}), 200
+    return jsonify({
+        "access_token": access_token,
+        "user": {  # Include user details in the response
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+        }
+    }), 200
+
+@auth_bp.route('/user', methods=['GET'])
+@jwt_required()
+def get_user_details():
+    user_id = get_jwt_identity()  # This should now work
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "email": user.email,
+    }), 200

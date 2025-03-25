@@ -35,52 +35,53 @@
     </div>
   </template>
   
-  <script setup>
-  import { ref } from "vue";
-  import axios from "axios";
-  import { useRouter } from "vue-router";
-  
-  const firstName = ref("");
-  const lastName = ref("");
-  const email = ref("");
-  const confirmEmail = ref("");
-  const password = ref("");
-  const confirmPassword = ref("");
-  const router = useRouter();
-  
-  const handleSignup = async () => {
-    // Basic validation
-    if (email.value !== confirmEmail.value) {
-      alert("Emails do not match!");
-      return;
+ <script setup>
+import { ref } from "vue";
+import axios from "axios";
+import { useRouter } from "vue-router";
+
+const firstName = ref("");
+const lastName = ref("");
+const email = ref("");
+const confirmEmail = ref("");
+const password = ref("");
+const confirmPassword = ref("");
+const router = useRouter();
+
+const handleSignup = async () => {
+  // Basic validation
+  if (email.value !== confirmEmail.value) {
+    alert("Emails do not match!");
+    return;
+  }
+  if (password.value !== confirmPassword.value) {
+    alert("Passwords do not match!");
+    return;
+  }
+
+  try {
+    const response = await axios.post("http://localhost:5000/auth/signup", {
+      first_name: firstName.value,
+      last_name: lastName.value,
+      email: email.value,
+      password: password.value,
+    });
+
+    if (response.status === 201) {
+      // Save the JWT token and user details to localStorage
+      const { access_token, user } = response.data;
+      localStorage.setItem("access_token", access_token);
+      localStorage.setItem("user", JSON.stringify(user));  // Save user details
+
+      // Redirect to the dashboard
+      router.push("/dashboard");
     }
-    if (password.value !== confirmPassword.value) {
-      alert("Passwords do not match!");
-      return;
-    }
-  
-    try {
-      const response = await axios.post("http://localhost:5000/auth/signup", {
-        first_name: firstName.value,
-        last_name: lastName.value,
-        email: email.value,
-        password: password.value,
-      });
-  
-      if (response.status === 201) {
-        // Save the JWT token to localStorage
-        const { access_token } = response.data;
-        localStorage.setItem("access_token", access_token);
-  
-        // Redirect to the dashboard
-        router.push("/dashboard");
-      }
-    } catch (error) {
-      console.error("Signup error:", error.response?.data || error.message);
-      alert(error.response?.data?.error || "Signup failed. Please try again.");
-    }
-  };
-  </script>
+  } catch (error) {
+    console.error("Signup error:", error.response?.data || error.message);
+    alert(error.response?.data?.error || "Signup failed. Please try again.");
+  }
+};
+</script>
   
   <style scoped>
   /* Main container */
