@@ -11,20 +11,99 @@
       </div>
       <div class="chat-history">
         <h3>Chat History</h3>
-        <div 
-          v-for="(chat, index) in chatHistory" 
-          :key="index" 
-          class="history-item"
-          :class="{ active: currentChat === index }"
-          @click="loadChat(index)"
-        >
-          {{ chat.title }}
+        
+        <!-- Assignment Help Section -->
+        <div class="dropdown-section">
+          <div class="dropdown-header" @click="toggleDropdown('assignment')">
+            Assignment Help
+            <span class="dropdown-arrow">{{ openDropdown === 'assignment' ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="openDropdown === 'assignment'" class="dropdown-content">
+            <div v-if="getChatsByType('assignment_help').length > 0">
+              <div 
+                v-for="(chat, index) in getChatsByType('assignment_help')" 
+                :key="chat.id" 
+                class="history-item"
+                :class="{ active: currentChat?.id === chat.id }"
+                @click="loadChat(chat.id)"
+              >
+                <div class="chat-info">
+                  <div class="chat-title">{{ chat.title }}</div>
+                  <div class="chat-date">{{ formatDate(chat.created_at) }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="no-chats">
+              No assignment help history
+            </div>
+            <button class="new-chat-btn" @click="startNewChat('assignment_help')">
+              + New Assignment Chat
+            </button>
+          </div>
         </div>
-        <div class="new-chat-btn" @click="startNewChat">
-          <span>+ New Chat</span>
+        
+        <!-- Study Tips Section -->
+        <div class="dropdown-section">
+          <div class="dropdown-header" @click="toggleDropdown('study')">
+            Study Tips
+            <span class="dropdown-arrow">{{ openDropdown === 'study' ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="openDropdown === 'study'" class="dropdown-content">
+            <div v-if="getChatsByType('study_tips').length > 0">
+              <div 
+                v-for="(chat, index) in getChatsByType('study_tips')" 
+                :key="chat.id" 
+                class="history-item"
+                :class="{ active: currentChat?.id === chat.id }"
+                @click="loadChat(chat.id)"
+              >
+                <div class="chat-info">
+                  <div class="chat-title">{{ chat.title }}</div>
+                  <div class="chat-date">{{ formatDate(chat.created_at) }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="no-chats">
+              No study tips history
+            </div>
+            <button class="new-chat-btn" @click="startNewChat('study_tips')">
+              + New Study Tips Chat
+            </button>
+          </div>
+        </div>
+        
+        <!-- Essay Helper Section -->
+        <div class="dropdown-section">
+          <div class="dropdown-header" @click="toggleDropdown('essay')">
+            Essay Helper
+            <span class="dropdown-arrow">{{ openDropdown === 'essay' ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="openDropdown === 'essay'" class="dropdown-content">
+            <div v-if="getChatsByType('essay_helper').length > 0">
+              <div 
+                v-for="(chat, index) in getChatsByType('essay_helper')" 
+                :key="chat.id" 
+                class="history-item"
+                :class="{ active: currentChat?.id === chat.id }"
+                @click="loadChat(chat.id)"
+              >
+                <div class="chat-info">
+                  <div class="chat-title">{{ chat.title }}</div>
+                  <div class="chat-date">{{ formatDate(chat.created_at) }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="no-chats">
+              No essay helper history
+            </div>
+            <button class="new-chat-btn" @click="startNewChat('essay_helper')">
+              + New Essay Helper Chat
+            </button>
+          </div>
         </div>
       </div>
     </div>
+
 
     <!-- Main Chat Area -->
     <div class="main-content">
@@ -50,13 +129,14 @@
               v-model="userInput" 
               placeholder="Type your message here..." 
               @keyup.enter="sendMessage"
+              :disabled="isLoading"
             />
             <div class="input-actions">
               <button class="action-btn">
                 <img src="../assets/images/emoji-icon.jpeg" alt="Emoji" />
               </button>
-              <button class="send-btn" @click="sendMessage">
-                Send
+              <button class="send-btn" @click="sendMessage" :disabled="isLoading">
+                {{ isLoading ? 'Sending...' : 'Send' }}
               </button>
             </div>
           </div>
@@ -67,130 +147,193 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, nextTick } from "vue";
 import axios from "axios";
+import { authAxios } from '../utils/auth'
 
 const API_BASE_URL = "http://127.0.0.1:5000"; 
-const user = ref({ first_name: "", last_name: "" }); // Initialize with empty values
 
+// Reactive state
+const user = ref(JSON.parse(localStorage.getItem('user')) || {});
 const userInput = ref("");
-const currentChat = ref(0);
-const messages = reactive([
-    {
-        sender: "ai",
-        text: "Hello! I'm your Kion Student Assistant. How can I help you today?"
-    }
-]);
+const currentChat = ref(null);
+const messages = reactive([]);
+const chatHistory = reactive([]);
+const openDropdown = ref(null); // Track which dropdown is open
+const isLoading = ref(false);
 
-const fetchUserDetails = async () => {
+
+// Helper to filter chats by type
+const getChatsByType = (type) => {
+  return chatHistory.filter(chat => chat.type === type);
+};
+
+const toggleDropdown = (type) => {
+  openDropdown.value = openDropdown.value === type ? null : type;
+};
+
+const formatDate = (dateString) => {
+  const options = { month: 'short', day: 'numeric', year: 'numeric' };
+  return new Date(dateString).toLocaleDateString(undefined, options);
+};
+
+const getWelcomeMessage = (chatType) => {
+  const welcomeMessages = {
+    assignment_help: "Hello! I'm here to help with your assignments. What are you working on today?",
+    study_tips: "Ready to improve your study habits? Let's discuss some effective strategies!",
+    essay_helper: "I can help you plan and structure your essay. What's your topic?"
+  };
+  return welcomeMessages[chatType] || "Hello! I'm your Kion Student Assistant. How can I help you today?";
+};
+
+const startNewChat = async (chatType) => {
+  openDropdown.value = null;
+  messages.splice(0, messages.length);
+  messages.push({
+    sender: "ai",
+    text: getWelcomeMessage(chatType)
+  });
+
+  const newSessionId = `session_${Date.now()}`;
+  const newChat = {
+    id: newSessionId,
+    title: `${toTitleCase(chatType.replace('_', ' '))} - ${new Date().toLocaleDateString()}`,
+    type: chatType,
+    created_at: new Date().toISOString()
+  };
+  
+  chatHistory.unshift(newChat);
+  currentChat.value = newChat;
+};
+
+const toTitleCase = (str) => {
+  return str.replace(/\w\S*/g, (txt) => {
+    return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+  });
+};
+
+const sendMessage = async () => {
+  if (userInput.value.trim() === "" || isLoading.value) {
+    return;
+  }
+
+  if (!currentChat.value) {
+    // If no current chat, start a default one
+    await startNewChat('assignment_help');
+  }
+
+  isLoading.value = true;
+  const userMessage = {
+    sender: "user",
+    text: userInput.value
+  };
+  messages.push(userMessage);
+  
+  const messageToSend = userInput.value;
+  userInput.value = "";
+
   try {
-    const response = await axios.get(`${API_BASE_URL}/auth/user`, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("access_token")}`, // Include the JWT token
+    const response = await axios.post(
+      `${API_BASE_URL}/api/chat`, 
+      { 
+        message: messageToSend,
+        chat_type: currentChat.value.type,
+        session_id: currentChat.value.id
       },
+      { 
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("access_token")}`
+        } 
+      }
+    );
+
+    if (response.data.error) {
+      throw new Error(response.data.error);
+    }
+
+    messages.push({
+      sender: "ai",
+      text: response.data.response
     });
 
-    if (response.data) {
-      user.value = response.data; // Update the user ref with the fetched data
-    }
+    await fetchChatHistory();
+    scrollToBottom();
   } catch (error) {
-    console.error("Error fetching user details:", error.response?.data || error.message);
+    console.error("Error sending message:", error);
+    messages.push({
+      sender: "ai",
+      text: "Sorry, I encountered an issue processing your request. Please try again."
+    });
+  } finally {
+    isLoading.value = false;
   }
 };
 
-const chatHistory = reactive([
-    { title: "Assignment Help", date: "Mar 12, 2025", type: "assignment_help", session_id: "assignment_help_1" },
-    { title: "Study Tips", date: "Mar 8, 2025", type: "study_tips", session_id: "study_tips_1" }
-]);
-
-const sendMessage = async () => {
-    if (userInput.value.trim() === "") return;
-
-    // Add user message
-    messages.push({
-        sender: "user",
-        text: userInput.value
-    });
-
-    const userQuestion = userInput.value;
-    userInput.value = "";
-
-    try {
-        const response = await axios.post(
-            `${API_BASE_URL}/api/chat`, 
-            { 
-                message: userQuestion,
-                chat_type: chatHistory[currentChat.value].type,  
-                session_id: chatHistory[currentChat.value].session_id  
-            },
-            { headers: { "Content-Type": "application/json" } } 
-        );
-
-        // Add AI response to chat
-        if (response.data.response) {
-            messages.push({
-                sender: "ai",
-                text: response.data.response
-            });
-        } else {
-            messages.push({
-                sender: "ai",
-                text: "I didn't quite get that, can you try again?"
-            });
-        }
-
-        scrollToBottom();
-    } catch (error) {
-        console.error("Error communicating with AI backend:", error.response?.data || error.message);
-        messages.push({
-            sender: "ai",
-            text: "Sorry, I encountered an issue processing your request."
-        });
+const fetchChatHistory = async () => {
+  try {
+    const response = await authAxios.get('/api/chats')
+    
+    chatHistory.splice(0, chatHistory.length, ...response.data);
+    
+    if (chatHistory.length > 0 && !currentChat.value) {
+      currentChat.value = chatHistory[0];
+      await loadChat(chatHistory[0].id);
     }
+    else if (chatHistory.length > 0 && !currentChat.value) {
+      currentChat.value = chatHistory[0];
+      await loadChat(chatHistory[0].id);
+    }
+
+  } catch (error) {
+    if (error.response?.status === 401) {
+      router.push('/login')
+    }
+  }
+};
+
+const loadChat = async (chatId) => {
+  const chat = chatHistory.find(c => c.id === chatId);
+  if (!chat) return;
+  
+  currentChat.value = chat;
+  
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/chats/${chatId}`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+      },
+    });
+    
+    messages.splice(0, messages.length);
+    response.data.forEach(msg => {
+      messages.push({
+        sender: msg.sender,
+        text: msg.content
+      });
+    });
+  } catch (error) {
+    console.error("Error loading chat:", error);
+  }
 };
 
 const scrollToBottom = () => {
+  nextTick(() => {
     const chatContainer = document.querySelector('.chat-messages');
     if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+      chatContainer.scrollTop = chatContainer.scrollHeight;
     }
+  });
 };
 
-const startNewChat = () => {
-    // Clear messages and start a new chat
-    messages.splice(0, messages.length);
-    messages.push({
-        sender: "ai",
-        text: "Hello! I'm your Kion Student Assistant. How can I help you today?"
-    });
+onMounted(async () => {
+  user.value = JSON.parse(localStorage.getItem('user')) || {};
+  
 
-    // Add new chat to history
-    const newSessionId = `new_session_${Date.now()}`;  // Generate a unique session ID
-    chatHistory.unshift({
-        title: "New Conversation",
-        date: new Date().toLocaleDateString(),
-        type: "assignment_help",  // Default to assignment help
-        session_id: newSessionId
-    });
-
-    currentChat.value = 0;
-};
-
-const loadChat = (index) => {
-    currentChat.value = index;
-    // In a real app, you would load the chat messages from storage/API
-    // For demo, we'll just show a notification message
-    messages.splice(0, messages.length);
-    messages.push({
-        sender: "ai",
-        text: `Let me offer assistance on: ${chatHistory[index].title}`
-    });
-};
-
-onMounted(() => {
-  fetchUserDetails(); // Fetch user details when the component mounts
+  await fetchChatHistory();
 });
 </script>
+
 
   
   <style scoped>
@@ -256,19 +399,117 @@ onMounted(() => {
     opacity: 0.8;
   }
   
-  .history-item {
-    padding: 10px;
-    margin-bottom: 5px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-  
+  .dropdown-container {
+  position: relative;
+  margin-bottom: 15px;
+}
+
+.dropdown-btn {
+  width: 100%;
+  padding: 10px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dropdown-section {
+  margin-bottom: 15px;
+}
+
+.dropdown-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.dropdown-arrow {
+  font-size: 0.8em;
+}
+
+.dropdown-content {
+  position: absolute;
+  width: 100%;
+  background-color: #1b408d;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  z-index: 1;
+}
+
+.dropdown-content div {
+  padding: 10px;
+  cursor: pointer;
+}
+
+.dropdown-content div:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.no-chats {
+  padding: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+  text-align: center;
+}
+
+.new-chat-btn {
+  width: 100%;
+  padding: 8px;
+  margin-top: 10px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+}
+
+.new-chat-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.chat-type-icon {
+  margin-right: 10px;
+  font-size: 1.2em;
+}
+
+.chat-info {
+  flex: 1;
+}
+
+.chat-title {
+  font-weight: 500;
+}
+
+.chat-date {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+/* Style different chat types differently */
+.history-item.assignment-help {
+  border-left: 3px solid #24b9f9;
+}
+
+.history-item.study-tips {
+  border-left: 3px solid #4CAF50;
+}
   .history-item:hover, .history-item.active {
     background-color: rgba(255, 255, 255, 0.1);
   }
   
-  .new-chat-btn {
+.new-chat-btn {
     margin-top: 15px;
     padding: 10px;
     background-color: rgba(255, 255, 255, 0.1);
@@ -417,4 +658,13 @@ onMounted(() => {
   .send-btn:hover {
     background-color: #1da7e6;
   }
+
+  .send-btn:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.input-container input:disabled {
+  background-color: #f0f0f0;
+}
   </style>

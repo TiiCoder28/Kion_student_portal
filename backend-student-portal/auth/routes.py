@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from .models import User  # Import the User model from the models module
-from app.database import db  # Import the shared SQLAlchemy instance
+from .models import User 
+from app.database import db
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -33,7 +33,7 @@ def signup():
     return jsonify({
         "message": "User created successfully",
         "access_token": access_token,
-        "user": {  # Include user details in the response
+        "user": {
             "first_name": new_user.first_name,
             "last_name": new_user.last_name,
         }
@@ -54,7 +54,7 @@ def login():
     access_token = create_access_token(identity=user.id)
     return jsonify({
         "access_token": access_token,
-        "user": {  # Include user details in the response
+        "user": {  
             "first_name": user.first_name,
             "last_name": user.last_name,
         }
@@ -63,7 +63,7 @@ def login():
 @auth_bp.route('/user', methods=['GET'])
 @jwt_required()
 def get_user_details():
-    user_id = get_jwt_identity()  # This should now work
+    user_id = get_jwt_identity() 
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
