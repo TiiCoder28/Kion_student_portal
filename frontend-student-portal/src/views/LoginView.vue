@@ -29,33 +29,36 @@
   </template>
   
   <script setup>
-import { ref } from "vue";
-import axios from "axios";
-import { useRouter } from "vue-router";
-
-const email = ref("");
-const password = ref("");
-const router = useRouter();
-
-const handleLogin = async () => {
-  try {
-    const response = await axios.post("http://localhost:5000/auth/login", {
-      email: email.value,
-      password: password.value,
-    });
-
-    if (response.status === 200) {
-      const { access_token } = response.data;
-      localStorage.setItem("access_token", access_token); // Store the token
-      alert("Login successful!");
-      router.push("/dashboard"); // Redirect to dashboard
+  import { ref } from "vue";
+  import axios from "axios";
+  import { useRouter } from "vue-router";
+  
+  const email = ref("");
+  const password = ref("");
+  const router = useRouter();
+  
+  const handleLogin = async () => {
+    try {
+      const response = await axios.post("http://localhost:5000/auth/login", {
+        email: email.value,
+        password: password.value,
+      });
+  
+      if (response.status === 200) {
+        // Save the JWT token and user details to localStorage
+        const { access_token, user } = response.data;
+        localStorage.setItem("access_token", response.data.access_token);
+        localStorage.setItem("user", JSON.stringify(user));  // Save user details
+  
+        // Redirect to the dashboard
+        router.push("/dashboard");
+      }
+    } catch (error) {
+      console.error("Login error:", error.response?.data || error.message);
+      alert(error.response?.data?.error || "Login failed. Please try again.");
     }
-  } catch (error) {
-    console.error("Login error:", error.response?.data || error.message);
-    alert(error.response?.data?.error || "Login failed. Please try again.");
-  }
-};
-</script>
+  };
+  </script>
   
   <style scoped>
   .signup-container {

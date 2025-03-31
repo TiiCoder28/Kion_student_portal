@@ -1,17 +1,21 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import get_jwt_identity, jwt_required
 from openai import OpenAI  # Import the new OpenAI client
 import os
 from dotenv import load_dotenv
+from datetime import datetime
+from auth.models import User
+import uuid
+from auth.models import ChatSession, ChatMessage, db
 
 load_dotenv()
 
-# Create a Blueprint for the chat route
 chat_bp = Blueprint("chat", __name__)
 
-# Initialize the OpenAI client
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Dictionary to store conversation history for each session
+
 conversation_history = {}
 
 # System prompts for different assistant modes
@@ -43,48 +47,114 @@ assistant_modes = {
 }
 
 @chat_bp.route("/chat", methods=["POST"])
+@jwt_required()
 def chat():
     """Handles structured AI assistant requests."""
     data = request.json
     user_message = data.get('message', '').strip()
-    mode = data.get('mode', 'assignment_help')  # Default to assignment help
-    session_id = data.get('session_id', 'default_session')  # Unique session ID
+    chat_type = data.get('chat_type', 'assignment_help')
+    session_id = data.get('session_id', str(uuid.uuid4()))
+    user_id = get_jwt_identity()
 
-    # Validate input
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    # Get the appropriate assistant mode
-    system_prompt = assistant_modes.get(mode, assistant_modes["assignment_help"])
+    if chat_type not in assistant_modes:
+        return jsonify({"error": "Invalid chat type"}), 400
 
-    # Initialize conversation history for the session if it doesn't exist
-    if session_id not in conversation_history:
-        conversation_history[session_id] = [{"role": "system", "content": system_prompt}]
 
-    # Add user's message to the conversation history
-    conversation_history[session_id].append({"role": "user", "content": user_message})
+    # Check if user has too many active chats
+    active_chats = ChatSession.query.filter_by(user_id=user_id).count()
+    if active_chats >= 5:
+        return jsonify({"error": "You've reached the maximum number of active chats (5)"}), 400
 
-    try:
-        # Call OpenAI API using structured responses
-        response = client.chat.completions.create(
-            model="gpt-4o-mini", 
-            messages=conversation_history[session_id],
-            temperature=0.3
+
+    # Get or create chat session
+    session = ChatSession.query.get(session_id)
+    if not session:
+        session = ChatSession(
+            id=session_id,
+            user_id=user_id,
+            title=f"{chat_type.replace('_', ' ').title()} - {datetime.now().strftime('%b %d')}",
+            chat_type=chat_type
         )
+        db.session.add(session)
+        db.session.commit()
 
-        # Extract AI's structured response
+   # Save user message
+    user_msg = ChatMessage(
+        session_id=session_id,
+        sender='user',
+        content=user_message
+    )
+    db.session.add(user_msg)
+
+  
+    system_prompt = assistant_modes[chat_type]
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.3,
+            max_tokens=128000
+        )
+        
         ai_response = response.choices[0].message.content.strip()
+        
+        # Save AI response
+        ai_msg = ChatMessage(
+            session_id=session_id,
+            sender='ai',
+            content=ai_response
+        )
+        db.session.add(ai_msg)
+        db.session.commit()
 
-        # Add AI's response to conversation history
-        conversation_history[session_id].append({"role": "assistant", "content": ai_response})
-
-        # Return structured JSON response
         return jsonify({
-            "mode": mode,
             "response": ai_response,
-            "next_steps": "Would you like further clarification or an example?"
+            "session_id": session_id
         })
 
     except Exception as e:
-        print(f"Error calling OpenAI API: {e}")
-        return jsonify({"error": "An error occurred while processing your request"}), 500
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@chat_bp.route("/chats", methods=["GET"])
+@jwt_required()
+def get_user_chats():
+    user_id = get_jwt_identity()
+    
+    # Verify user exists
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+        
+    sessions = ChatSession.query.filter_by(user_id=user_id).order_by(ChatSession.created_at.desc()).all()
+    return jsonify([{
+        "id": s.id,
+        "title": s.title,
+        "type": s.chat_type,
+        "created_at": s.created_at.isoformat()  # Consistent date format
+    } for s in sessions])
+
+
+
+@chat_bp.route("/chats/<session_id>", methods=["GET"])
+@jwt_required()
+def get_chat_messages(session_id):
+    user_id = get_jwt_identity()
+    session = ChatSession.query.filter_by(id=session_id, user_id=user_id).first()
+    if not session:
+        return jsonify({"error": "Chat not found"}), 404
+        
+    messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
+    return jsonify([{
+        "sender": m.sender,
+        "content": m.content,
+        "timestamp": m.timestamp.isoformat()
+    } for m in messages])

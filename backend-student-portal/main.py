@@ -1,31 +1,48 @@
-from flask import Flask
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from app.database import db
-from flask_jwt_extended import JWTManager
-from auth.models import User  # Import the User model
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
+from auth.models import User, ChatSession, ChatMessage
 from dotenv import load_dotenv
 import os
+from datetime import timedelta
 
 # Load environment variables from .env file
 load_dotenv()
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)
-
+    
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": "http://localhost:5173",
+            "supports_credentials": True,
+            "allow_headers": ["Content-Type", "Authorization"]
+        },
+        r"/auth/*": {
+            "origins": "http://localhost:5173",
+            "supports_credentials": True,
+            "allow_headers": ["Content-Type", "Authorization"]
+        }
+    })
     # Configure PostgreSQL using environment variable
     DB_URI = os.getenv("DATABASE_URI")
     if not DB_URI:
         raise ValueError("DATABASE_URI not found in .env file")
     app.config['SQLALCHEMY_DATABASE_URI'] = DB_URI
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
     app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY")
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+    app.config['JWT_TOKEN_LOCATION'] = ['headers']
+    app.config['JWT_HEADER_NAME'] = 'Authorization'
+    app.config['JWT_HEADER_TYPE'] = 'Bearer'
+    
+    if not app.config['SQLALCHEMY_DATABASE_URI']:
+        raise ValueError("DATABASE_URI not found in .env")
     if not app.config['JWT_SECRET_KEY']:
         raise ValueError("JWT_SECRET_KEY not found in .env file")
-    jwt = JWTManager(app)  # Initialize JWTManager
-
-    # Initialize database
+    
+    jwt = JWTManager(app) 
     db.init_app(app)
 
     # Debug: Verify database connection
@@ -41,7 +58,6 @@ def create_app():
 
     # Debug: Check registered models
     with app.app_context():
-        print("\n⏳ Checking registered models...")
         try:
             for table in db.metadata.tables.values():
                 print(f"✅ Found table: {table.name}")
@@ -63,14 +79,7 @@ if __name__ == "__main__":
     with app.app_context():
         try:
             db.create_all()
-            
-            # List tables using SQLAlchemy 2.0+ compatible method
-            from sqlalchemy import inspect
-            inspector = inspect(db.engine)
-            tables = inspector.get_table_names()
-            print("✅ Tables in database:", tables)
         except Exception as e:
-            print("\n❌ ERROR: Table creation failed!")
             print(f"❌ Error: {str(e)}")
             exit(1)
             
