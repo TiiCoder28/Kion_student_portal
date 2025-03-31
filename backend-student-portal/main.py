@@ -11,7 +11,12 @@ load_dotenv()
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)
+    CORS(app, resources={
+    r"/auth/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET"], "allow_headers": ["Content-Type", "Authorization"]},
+    r"/api/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET"], "allow_headers": ["Content-Type", "Authorization"]}
+},  supports_credentials=True)  
+    exposed_headers = ['Authorization', 'Content-Type']
+    app.after_request(lambda response: (response.headers.add('Access-Control-Expose-Headers', ', '.join(exposed_headers)), response)[1])
 
     # Configure PostgreSQL using environment variable
     DB_URI = os.getenv("DATABASE_URI")
@@ -23,6 +28,9 @@ def create_app():
     app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY")
     if not app.config['JWT_SECRET_KEY']:
         raise ValueError("JWT_SECRET_KEY not found in .env file")
+    
+    app.config['JWT_TOKEN_LOCATION'] = ['headers']
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 3600  # 1 hour
     jwt = JWTManager(app)  # Initialize JWTManager
 
     # Initialize database
@@ -74,4 +82,4 @@ if __name__ == "__main__":
             print(f"❌ Error: {str(e)}")
             exit(1)
             
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

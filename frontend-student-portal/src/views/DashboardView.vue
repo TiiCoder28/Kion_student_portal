@@ -7,20 +7,20 @@
         <div class="user-avatar">
           <img src="../assets/images/student-avatar.jpeg" alt="User" />
         </div>
-        <div class="username">User name</div>
+        <h3 class="username">Welcome {{ user.firstName }} 👋!</h3>
       </div>
       <div class="chat-history">
         <h3>Chat History</h3>
         <div 
-          v-for="(chat, index) in chatHistory" 
-          :key="index" 
+          v-for="conversation in conversations" 
+          :key="conversation.id" 
           class="history-item"
-          :class="{ active: currentChat === index }"
-          @click="loadChat(index)"
+          :class="{ active: activeConversationId === conversation.id }"
+          @click="loadConversation(conversation.id)"
         >
-          {{ chat.title }}
+          {{ conversation.title }}
         </div>
-        <div class="new-chat-btn" @click="startNewChat">
+        <div class="new-chat-btn" @click="startNewConversation">
           <span>+ New Chat</span>
         </div>
       </div>
@@ -28,17 +28,22 @@
 
     <!-- Main Chat Area -->
     <div class="main-content">
-      <div class="chat-container">
+      <div v-if="loading" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading conversation...</p>
+      </div>
+      
+      <div v-else class="chat-container">
         <div class="chat-messages">
           <div v-for="(message, index) in messages" :key="index" class="message-container">
-            <div :class="['message', message.sender === 'ai' ? 'ai-message' : 'user-message']">
+            <div :class="['message', message.role === 'assistant' ? 'ai-message' : 'user-message']">
               <div class="avatar">
                 <img 
-                  :src="message.sender === 'ai' ? '../assets/images/kion-robot.png' : '../assets/images/student-avatar.png'" 
-                  :alt="message.sender === 'ai' ? 'AI Assistant' : 'User'" 
+                  :src="message.role === 'assistant' ? '../assets/images/kion-robot.png' : '../assets/images/student-avatar.png'" 
+                  :alt="message.role === 'assistant' ? 'AI Assistant' : 'User'" 
                 />
               </div>
-              <div class="message-content">{{ message.text }}</div>
+              <div class="message-content">{{ message.content }}</div>
             </div>
           </div>
         </div>
@@ -50,12 +55,14 @@
               v-model="userInput" 
               placeholder="Type your message here..." 
               @keyup.enter="sendMessage"
+              :disabled="!activeConversationId"
+              ref="messageInput"
             />
             <div class="input-actions">
               <button class="action-btn">
                 <img src="../assets/images/emoji-icon.jpeg" alt="Emoji" />
               </button>
-              <button class="send-btn" @click="sendMessage">
+              <button class="send-btn" @click="sendMessage" :disabled="!activeConversationId">
                 Send
               </button>
             </div>
@@ -66,112 +73,202 @@
   </div>
 </template>
 
+
 <script setup>
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, nextTick } from "vue";
 import axios from "axios";
+import apiClient from "@/api/client.js";
+import { useRouter } from "vue-router";
 
-const API_BASE_URL = "http://127.0.0.1:5000"; 
-
+const API_BASE_URL = "http://localhost:5000";
+const router = useRouter();
 const userInput = ref("");
-const currentChat = ref(0);
-const messages = reactive([
-    {
-        sender: "ai",
-        text: "Hello! I'm your Kion Student Assistant. How can I help you today?"
-    }
-]);
+const messageInput = ref(null);
 
-const chatHistory = reactive([
-    { title: "Assignment Help", date: "Mar 12, 2025", type: "assignment_help", session_id: "assignment_help_1" },
-    { title: "Study Tips", date: "Mar 8, 2025", type: "study_tips", session_id: "study_tips_1" }
-]);
+// User data
+const user = reactive({
+  firstName: "",
+  lastName: "",
+  email: ""
+});
 
-const sendMessage = async () => {
-    if (userInput.value.trim() === "") return;
+// Chat state
+const loading = ref(false);
+const activeConversationId = ref(null);
+const messages = reactive([]);
+const conversations = reactive([]);
 
-    // Add user message
-    messages.push({
-        sender: "user",
-        text: userInput.value
-    });
-
-    const userQuestion = userInput.value;
-    userInput.value = "";
-
-    try {
-        const response = await axios.post(
-            `${API_BASE_URL}/api/chat`, 
-            { 
-                message: userQuestion,
-                chat_type: chatHistory[currentChat.value].type,  
-                session_id: chatHistory[currentChat.value].session_id  
-            },
-            { headers: { "Content-Type": "application/json" } } 
-        );
-
-        // Add AI response to chat
-        if (response.data.response) {
-            messages.push({
-                sender: "ai",
-                text: response.data.response
-            });
-        } else {
-            messages.push({
-                sender: "ai",
-                text: "I didn't quite get that, can you try again?"
-            });
-        }
-
-        scrollToBottom();
-    } catch (error) {
-        console.error("Error communicating with AI backend:", error.response?.data || error.message);
-        messages.push({
-            sender: "ai",
-            text: "Sorry, I encountered an issue processing your request."
-        });
-    }
+// Format date for display
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+// Fetch user data
+const fetchUserData = async () => {
+  try {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    const response = await axios.get(`${API_BASE_URL}/auth/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    user.firstName = response.data.first_name;
+    user.lastName = response.data.last_name;
+    user.email = response.data.email;
+  } catch (error) {
+    console.error("Error fetching user data:", error);
+    router.push("/login");
+  }
+};
+
+// Fetch all conversations for the user
+const fetchConversations = async () => {
+  try {
+    loading.value = true;
+    const token = localStorage.getItem("access_token");
+    const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    conversations.splice(0, conversations.length, ...response.data);
+    
+    // Load the most recent conversation by default
+    if (conversations.length > 0) {
+      await loadConversation(conversations[0].id);
+    }
+  } catch (error) {
+    console.error("Error fetching conversations:", error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Load a specific conversation
+const loadConversation = async (conversationId) => {
+  try {
+    loading.value = true;
+    activeConversationId.value = conversationId;
+    const token = localStorage.getItem("access_token");
+    
+    const response = await axios.get(`${API_BASE_URL}/api/conversations/${conversationId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    
+    messages.splice(0, messages.length, ...response.data.messages.filter(m => m.role !== 'system'));
+    scrollToBottom();
+  } catch (error) {
+    console.error("Error loading conversation:", error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Create a new conversation
+const startNewConversation = async () => {
+  try {
+    loading.value = true;
+    const token = localStorage.getItem("access_token");
+    
+    const response = await axios.post(
+      `${API_BASE_URL}/api/conversations`,
+      { mode: "assignment_help" },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+    
+    // Add new conversation to the top of the list
+    conversations.unshift(response.data);
+    await loadConversation(response.data.id);
+  } catch (error) {
+    console.error("Error creating conversation:", error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Send a message
+const sendMessage = async () => {
+  if (!userInput.value.trim() || !activeConversationId.value) return;
+
+  try {
+    const token = localStorage.getItem("access_token");
+    const messageContent = userInput.value;
+    
+    // Add user message to UI immediately
+    messages.push({
+      role: "user",
+      content: messageContent,
+      created_at: new Date().toISOString()
+    });
+    
+    userInput.value = "";
+    scrollToBottom();
+    
+    // Send to backend
+    const response = await axios.post(
+      `${API_BASE_URL}/api/conversations/${activeConversationId.value}/chat`,
+      { message: messageContent },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    
+    // Add AI response
+    messages.push({
+      role: "assistant",
+      content: response.data.response,
+      created_at: new Date().toISOString()
+    });
+    
+    // Refresh conversation list to update timestamps
+    await fetchConversations();
+    scrollToBottom();
+  } catch (error) {
+    console.error("Error sending message:", error);
+    messages.push({
+      role: "assistant",
+      content: "Sorry, I encountered an error processing your request.",
+      created_at: new Date().toISOString()
+    });
+  }
+};
+
+// Helper function to scroll to bottom of chat
 const scrollToBottom = () => {
+  setTimeout(() => {
     const chatContainer = document.querySelector('.chat-messages');
     if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+      chatContainer.scrollTop = chatContainer.scrollHeight;
     }
+  }, 50);
 };
 
-const startNewChat = () => {
-    // Clear messages and start a new chat
-    messages.splice(0, messages.length);
-    messages.push({
-        sender: "ai",
-        text: "Hello! I'm your Kion Student Assistant. How can I help you today?"
-    });
-
-    // Add new chat to history
-    const newSessionId = `new_session_${Date.now()}`;  // Generate a unique session ID
-    chatHistory.unshift({
-        title: "New Conversation",
-        date: new Date().toLocaleDateString(),
-        type: "assignment_help",  // Default to assignment help
-        session_id: newSessionId
-    });
-
-    currentChat.value = 0;
-};
-
-const loadChat = (index) => {
-    currentChat.value = index;
-    // In a real app, you would load the chat messages from storage/API
-    // For demo, we'll just show a notification message
-    messages.splice(0, messages.length);
-    messages.push({
-        sender: "ai",
-        text: `Let me offer assistance on: ${chatHistory[index].title}`
-    });
-};
-
-onMounted(() => {
-    scrollToBottom();
+// Initialize component
+onMounted(async () => {
+  nextTick(() => {
+    if(messageInput.value) {
+      messageInput.value.focus();
+    }
+  });
+  await fetchUserData();
+  await fetchConversations();
 });
 </script>
 
@@ -226,6 +323,8 @@ onMounted(() => {
   .chat-history {
     flex: 1;
     overflow-y: auto;
+    max-height: calc(100vh - 200px);
+    
   }
   
   .chat-history h3 {
@@ -283,11 +382,13 @@ onMounted(() => {
     padding: 10px;
     display: flex;
     flex-direction: column;
+    max-height: calc(100vh - 180px); /* Adjust based on your input height */
+    scroll-behavior: smooth; 
   }
   
   .message-container {
-    margin-bottom: 20px;
-    max-width: 80%;
+    margin-bottom: 10px;
+    width: 100%;
   }
   
   .ai-message {
@@ -395,4 +496,35 @@ onMounted(() => {
   .send-btn:hover {
     background-color: #1da7e6;
   }
+
+  .loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: white;
+}
+
+.spinner {
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top: 4px solid white;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.conversation-date {
+  font-size: 0.8em;
+  opacity: 0.7;
+  margin-left: 8px;
+}
+
   </style>

@@ -47,6 +47,7 @@ const handleLogin = async () => {
     if (response.status === 200) {
       const { access_token } = response.data;
       localStorage.setItem("access_token", access_token); // Store the token
+      
       alert("Login successful!");
       router.push("/dashboard"); // Redirect to dashboard
     }
