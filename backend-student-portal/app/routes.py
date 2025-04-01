@@ -4,9 +4,8 @@ from openai import OpenAI  # Import the new OpenAI client
 import os
 from dotenv import load_dotenv
 from datetime import datetime
-from auth.models import User
-import uuid
-from auth.models import ChatSession, ChatMessage, db
+from auth.models import User, Conversation, Message
+from app.database import db
 
 load_dotenv()
 
@@ -35,126 +34,218 @@ assistant_modes = {
         "- Provide a personalized study plan using methods like active recall and spaced repetition.\n"
         "- Offer time management strategies.\n"
         "- Suggest tools and resources to enhance productivity."
-    ),
-    "essay_helper": (
-        "You are an AI assistant helping students plan and outline their essays.\n"
-        "Follow this structured approach: \n"
-        "1. **Understand the topic**: Ask the student for their thesis or main idea.\n"
-        "2. **Outline the structure**: Suggest an introduction, body paragraphs, and conclusion.\n"
-        "3. **Provide writing tips**: Explain how to strengthen arguments with evidence.\n"
-        "4. **Suggest improvements**: Offer constructive feedback on clarity and flow."
     )
 }
 
-@chat_bp.route("/chat", methods=["POST"])
+
+def get_conversation_context(conversation_id):
+    messages = Message.query.filter_by(conversation_id=conversation_id)\
+                  .order_by(Message.created_at.asc()).all()
+    
+    return [{"role": msg.role, "content": msg.content} for msg in messages]
+
+@chat_bp.route("/chat", methods=["POST"], endpoint="general_chat")
 @jwt_required()
-def chat():
-    """Handles structured AI assistant requests."""
+def general_chat():
     data = request.json
     user_message = data.get('message', '').strip()
-    chat_type = data.get('chat_type', 'assignment_help')
-    session_id = data.get('session_id', str(uuid.uuid4()))
+    conversation_id = data.get('conversation_id')
     user_id = get_jwt_identity()
 
-    if not user_message:
-        return jsonify({"error": "No message provided"}), 400
+    if not user_message or not conversation_id:
+        return jsonify({"error": "Missing required fields"}), 400
 
-    if chat_type not in assistant_modes:
-        return jsonify({"error": "Invalid chat type"}), 400
+    conversation = Conversation.query.filter_by(id=conversation_id, user_id=user_id).first()
+    if not conversation:
+        return jsonify({"error": "Conversation not found"}), 404
 
-
-    # Check if user has too many active chats
-    active_chats = ChatSession.query.filter_by(user_id=user_id).count()
-    if active_chats >= 5:
-        return jsonify({"error": "You've reached the maximum number of active chats (5)"}), 400
-
-
-    # Get or create chat session
-    session = ChatSession.query.get(session_id)
-    if not session:
-        session = ChatSession(
-            id=session_id,
-            user_id=user_id,
-            title=f"{chat_type.replace('_', ' ').title()} - {datetime.now().strftime('%b %d')}",
-            chat_type=chat_type
-        )
-        db.session.add(session)
-        db.session.commit()
-
-   # Save user message
-    user_msg = ChatMessage(
-        session_id=session_id,
-        sender='user',
-        content=user_message
-    )
-    db.session.add(user_msg)
-
-  
-    system_prompt = assistant_modes[chat_type]
-    
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.3,
-            max_tokens=128000
+        # Save user message
+        user_msg = Message(
+            conversation_id=conversation_id,
+            content=user_message,
+            role="user"
         )
-        
+        db.session.add(user_msg)
+
+        # Get conversation context
+        messages = get_conversation_context(conversation_id)
+        openai_messages = [{
+            "role": "system",
+            "content": assistant_modes.get("assignment_help")
+        }] + messages
+
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=openai_messages,
+            temperature=0.3
+        )
+
         ai_response = response.choices[0].message.content.strip()
-        
+
         # Save AI response
-        ai_msg = ChatMessage(
-            session_id=session_id,
-            sender='ai',
-            content=ai_response
+        ai_msg = Message(
+            conversation_id=conversation_id,
+            content=ai_response,
+            role="assistant",
+            tokens=response.usage.total_tokens if hasattr(response, 'usage') else None
         )
         db.session.add(ai_msg)
         db.session.commit()
 
         return jsonify({
             "response": ai_response,
-            "session_id": session_id
+            "conversation_id": conversation_id
         })
 
     except Exception as e:
         db.session.rollback()
+        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-
-@chat_bp.route("/chats", methods=["GET"])
+@chat_bp.route("/conversations", methods=["GET"], endpoint="get_conversations")
 @jwt_required()
-def get_user_chats():
+def get_conversations():
     user_id = get_jwt_identity()
+    try:
+        conversations = db.session.query(
+            Conversation,
+            db.func.max(Message.created_at).label('last_activity')
+        ).join(Message)\
+         .filter(Conversation.user_id == user_id)\
+         .group_by(Conversation.id)\
+         .order_by(db.desc('last_activity'))\
+         .all()
+        
+        return jsonify([{
+            "id": conv.id,
+            "title": conv.title,
+            "created_at": conv.created_at.isoformat(),
+            "last_activity": last_activity.isoformat() if last_activity else conv.created_at.isoformat(),
+            "message_count": len(conv.messages)
+        } for conv, last_activity in conversations])
+    except Exception as e:
+        print(f"Error fetching conversations: {e}")
+        return jsonify({"error": "Failed to fetch conversations"}), 500
+
+@chat_bp.route("/conversations", methods=["POST"], endpoint="create_conversation")
+@jwt_required()
+def create_conversation():
+    user_id = get_jwt_identity()
+    mode = request.json.get('mode', 'assignment_help')
     
-    # Verify user exists
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    try:
+        new_conversation = Conversation(
+            user_id=user_id,
+            title=f"{mode.replace('_', ' ').title()} - {datetime.now().strftime('%b %d')}"
+        )
+        db.session.add(new_conversation)
+        db.session.flush()  # Get the ID before commit
         
-    sessions = ChatSession.query.filter_by(user_id=user_id).order_by(ChatSession.created_at.desc()).all()
-    return jsonify([{
-        "id": s.id,
-        "title": s.title,
-        "type": s.chat_type,
-        "created_at": s.created_at.isoformat()  # Consistent date format
-    } for s in sessions])
+        system_message = Message(
+            conversation_id=new_conversation.id,
+            content=assistant_modes.get(mode, assistant_modes["assignment_help"]),
+            role="system"
+        )
+        db.session.add(system_message)
+        db.session.commit()
+        
+        return jsonify({
+            "id": new_conversation.id,
+            "title": new_conversation.title
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating conversation: {e}")
+        return jsonify({"error": "Failed to create conversation"}), 500
 
-
-
-@chat_bp.route("/chats/<session_id>", methods=["GET"])
+@chat_bp.route("/conversations/<int:conversation_id>", methods=["GET"], endpoint="get_conversation")
 @jwt_required()
-def get_chat_messages(session_id):
+def get_conversation(conversation_id):
     user_id = get_jwt_identity()
-    session = ChatSession.query.filter_by(id=session_id, user_id=user_id).first()
-    if not session:
-        return jsonify({"error": "Chat not found"}), 404
+    try:
+        conversation = Conversation.query.filter_by(
+            id=conversation_id, 
+            user_id=user_id
+        ).first_or_404()
         
-    messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
-    return jsonify([{
-        "sender": m.sender,
-        "content": m.content,
-        "timestamp": m.timestamp.isoformat()
-    } for m in messages])
+        messages = Message.query.filter_by(conversation_id=conversation_id)\
+                      .order_by(Message.created_at.asc()).all()
+        
+        return jsonify({
+            "id": conversation.id,
+            "title": conversation.title,
+            "created_at": conversation.created_at.isoformat(),
+            "messages": [{
+                "id": msg.id,
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": msg.created_at.isoformat()
+            } for msg in messages]
+        })
+    except Exception as e:
+        print(f"Error fetching conversation: {e}")
+        return jsonify({"error": "Conversation not found"}), 404
+    
+@chat_bp.route("/conversations/<int:conversation_id>/chat", methods=["POST"])
+@jwt_required()
+def chat(conversation_id):
+    """Handle chat messages within a specific conversation"""
+    user_id = get_jwt_identity()
+    data = request.json
+    user_message = data.get('message', '').strip()
+    
+    # Verify conversation belongs to user
+    conversation = Conversation.query.filter_by(
+        id=conversation_id, 
+        user_id=user_id
+    ).first_or_404()
+    
+    if not user_message:
+        return jsonify({"error": "No message provided"}), 400
+    
+    # Save user message to database
+    user_msg = Message(
+        conversation_id=conversation_id,
+        content=user_message,
+        role="user"
+    )
+    db.session.add(user_msg)
+    
+    # Get conversation context for OpenAI
+    messages = get_conversation_context(conversation_id)
+    
+    try:
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model="gpt-4",  # Updated to current model
+            messages=messages,
+            temperature=0.3
+        )
+        
+        ai_response = response.choices[0].message.content.strip()
+        
+        # Save AI response to database
+        ai_msg = Message(
+            conversation_id=conversation_id,
+            content=ai_response,
+            role="assistant",
+            tokens=response.usage.total_tokens if hasattr(response, 'usage') else None
+        )
+        db.session.add(ai_msg)
+        
+        # Update conversation timestamp
+        conversation.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            "response": ai_response,
+            "conversation_id": conversation_id
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in chat endpoint: {e}")
+        return jsonify({"error": "An error occurred while processing your request"}), 500

@@ -2,7 +2,6 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from app.database import db
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
-from auth.models import User, ChatSession, ChatMessage
 from dotenv import load_dotenv
 import os
 from datetime import timedelta
@@ -12,19 +11,13 @@ load_dotenv()
 
 def create_app():
     app = Flask(__name__)
-    
     CORS(app, resources={
-        r"/api/*": {
-            "origins": "http://localhost:5173",
-            "supports_credentials": True,
-            "allow_headers": ["Content-Type", "Authorization"]
-        },
-        r"/auth/*": {
-            "origins": "http://localhost:5173",
-            "supports_credentials": True,
-            "allow_headers": ["Content-Type", "Authorization"]
-        }
-    })
+    r"/auth/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]},
+    r"/api/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}
+},  supports_credentials=True)  
+    exposed_headers = ['Authorization', 'Content-Type']
+    app.after_request(lambda response: (response.headers.add('Access-Control-Expose-Headers', ', '.join(exposed_headers)), response)[1])
+
     # Configure PostgreSQL using environment variable
     DB_URI = os.getenv("DATABASE_URI")
     if not DB_URI:
@@ -42,7 +35,11 @@ def create_app():
     if not app.config['JWT_SECRET_KEY']:
         raise ValueError("JWT_SECRET_KEY not found in .env file")
     
-    jwt = JWTManager(app) 
+    app.config['JWT_TOKEN_LOCATION'] = ['headers']
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 3600  # 1 hour
+    jwt = JWTManager(app)  # Initialize JWTManager
+
+    # Initialize database
     db.init_app(app)
 
     # Debug: Verify database connection
@@ -83,4 +80,4 @@ if __name__ == "__main__":
             print(f"❌ Error: {str(e)}")
             exit(1)
             
-    app.run(debug=True)
+    app.run(debug=True, port=5000)
