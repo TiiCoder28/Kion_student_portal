@@ -36,7 +36,7 @@ def create_app():
         raise ValueError("JWT_SECRET_KEY not found in .env file")
     
     app.config['JWT_TOKEN_LOCATION'] = ['headers']
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 3600  # 1 hour
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 36000 # 1 hour
     jwt = JWTManager(app)  # Initialize JWTManager
 
     # Initialize database

@@ -6,4 +6,4 @@ psycopg2-binary
 flask-sqlalchemy
 flask-bcrypt
 flask-jwt-extended
-flask-mail
+

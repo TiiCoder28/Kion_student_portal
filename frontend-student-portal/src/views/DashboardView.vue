@@ -11,19 +11,54 @@
       </div>
       <div class="chat-history">
         <h3>Chat History</h3>
-        <div 
-          v-for="conversation in conversations" 
-          :key="conversation.id" 
-          class="history-item"
-          :class="{ active: activeConversationId === conversation.id }"
-          @click="loadConversation(conversation.id)"
-        >
-          {{ conversation.title }}
+        
+        <!-- Today's Chats -->
+        <div v-if="todaysConversations.length > 0" class="history-section">
+          <h4 class="history-section-title">Today</h4>
+          <div 
+            v-for="conversation in todaysConversations" 
+            :key="conversation.id" 
+            class="history-item"
+            :class="{ 
+              active: activeConversationId === conversation.id,
+              'assignment-help': conversation.title.includes('Assignment'),
+              'study-tips': conversation.title.includes('Study')
+            }"
+            @click="loadConversation(conversation.id)"
+          >
+            <span class="conversation-icon">
+              {{ conversation.title.includes('Assignment') ? '📝' : '📚' }}
+            </span>
+            {{ conversation.title.split(' - ')[0] }}
+          </div>
         </div>
-        <div class="new-chat-btn" @click="startNewConversation">
+        
+        <!-- Previous Chats -->
+        <div v-if="previousConversations.length > 0" class="history-section">
+          <h4 class="history-section-title">Previous Chats</h4>
+          <div 
+            v-for="conversation in previousConversations" 
+            :key="conversation.id" 
+            class="history-item"
+            :class="{ 
+              active: activeConversationId === conversation.id,
+              'assignment-help': conversation.title.includes('Assignment'),
+              'study-tips': conversation.title.includes('Study')
+            }"
+            @click="loadConversation(conversation.id)"
+          >
+            <span class="conversation-icon">
+              {{ conversation.title.includes('Assignment') ? '📝' : '📚' }}
+            </span>
+            {{ conversation.title.split(' - ')[0] }}
+          </div>
+        </div>
+        
+        <div class="new-chat-btn" @click="showModeDialog = true">
           <span>+ New Chat</span>
         </div>
-      </div>
+</div>
+
     </div>
 
     <!-- Main Chat Area -->
@@ -43,31 +78,45 @@
                   :alt="message.role === 'assistant' ? 'AI Assistant' : 'User'" 
                 />
               </div>
-              <div class="message-content">{{ message.content }}</div>
+              <div class="message-content" v-html="message.content"></div>
             </div>
           </div>
         </div>
-
         <div class="chat-input">
-          <div class="input-container">
-            <input 
-              type="text" 
-              v-model="userInput" 
-              placeholder="Type your message here..." 
-              @keyup.enter="sendMessage"
-              :disabled="!activeConversationId"
-              ref="messageInput"
-            />
-            <div class="input-actions">
-              <button class="action-btn">
-                <img src="../assets/images/emoji-icon.jpeg" alt="Emoji" />
-              </button>
-              <button class="send-btn" @click="sendMessage" :disabled="!activeConversationId">
-                Send
-              </button>
-            </div>
-          </div>
+    <div class="input-container">
+      <textarea
+        ref="messageInput"
+        v-model="userInput"
+        placeholder="Type your message here..."
+        @keydown="handleKeyDown"
+        @input="adjustTextareaHeight"
+        :disabled="!activeConversationId"
+        rows="1"
+      ></textarea>
+      <div class="input-actions">
+        <button class="send-btn" @click="sendMessage" :disabled="!activeConversationId">
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+      </div>
+    </div>
+    <div v-if="showModeDialog" class="mode-dialog-overlay">
+      <div class="mode-dialog">
+        <h3>Start New Chat</h3>
+        <p>What type of assistance do you need?</p>
+        <div class="mode-options">
+          <button @click="createNewConversation('assignment_help')" class="mode-btn assignment-help">
+            <span class="mode-icon">📝</span>
+            <span class="mode-text">Assignment Help</span>
+          </button>
+          <button @click="createNewConversation('study_tips')" class="mode-btn study-tips">
+            <span class="mode-icon">📚</span>
+            <span class="mode-text">Study Tips</span>
+          </button>
         </div>
+        <button @click="showModeDialog = false" class="cancel-btn">Cancel</button>
       </div>
     </div>
   </div>
@@ -75,15 +124,18 @@
 
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from "vue";
+import { ref, reactive, onMounted, nextTick, computed } from "vue";
 import axios from "axios";
-import apiClient from "@/api/client.js";
 import { useRouter } from "vue-router";
+
+import { marked } from 'marked';
 
 const API_BASE_URL = "http://localhost:5000";
 const router = useRouter();
 const userInput = ref("");
 const messageInput = ref(null);
+const showModeDialog = ref(false);
+
 
 // User data
 const user = reactive({
@@ -98,11 +150,61 @@ const activeConversationId = ref(null);
 const messages = reactive([]);
 const conversations = reactive([]);
 
-// Format date for display
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 };
+
+const adjustTextareaHeight = () => {
+  nextTick(() => {
+    const textarea = messageInput.value;
+    if (textarea) {
+      // Reset height to get the correct scrollHeight
+      textarea.style.height = 'auto';
+      // Set new height based on content
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    }
+  });
+};
+
+const todaysConversations = computed(() => {
+  const today = new Date().toISOString().split('T')[0];
+  return conversations.filter(conv => {
+    // Add null check for created_at
+    if (!conv.created_at) return false;
+    
+    try {
+      const convDate = new Date(conv.created_at).toISOString().split('T')[0];
+      return convDate === today;
+    } catch (e) {
+      console.error("Invalid date format:", conv.created_at);
+      return false;
+    }
+  });
+});
+
+const renderMarkdown = (content) => {
+  return marked.parse(content);
+};
+
+const previousConversations = computed(() => {
+  const today = new Date().toISOString().split('T')[0];
+  return conversations.filter(conv => {
+    // Add null check for created_at
+    if (!conv.created_at) return false;
+    
+    try {
+      const convDate = new Date(conv.created_at).toISOString().split('T')[0];
+      return convDate !== today;
+    } catch (e) {
+      console.error("Invalid date format:", conv.created_at);
+      return false;
+    }
+  });
+});
 
 // Fetch user data
 const fetchUserData = async () => {
@@ -139,9 +241,17 @@ const fetchConversations = async () => {
       }
     });
     
-    conversations.splice(0, conversations.length, ...response.data);
+    // Add date validation
+    const validatedConversations = response.data.map(conv => {
+      if (!conv.created_at) {
+        console.warn("Conversation missing created_at:", conv.id);
+        conv.created_at = new Date().toISOString();
+      }
+      return conv;
+    });
     
-    // Load the most recent conversation by default
+    conversations.splice(0, conversations.length, ...validatedConversations);
+    
     if (conversations.length > 0) {
       await loadConversation(conversations[0].id);
     }
@@ -175,14 +285,19 @@ const loadConversation = async (conversationId) => {
 };
 
 // Create a new conversation
-const startNewConversation = async () => {
+const startNewConversation = () => {
+  showModeDialog.value = true;
+};
+
+const createNewConversation = async (mode) => {
+  showModeDialog.value = false;
   try {
     loading.value = true;
     const token = localStorage.getItem("access_token");
     
     const response = await axios.post(
       `${API_BASE_URL}/api/conversations`,
-      { mode: "assignment_help" },
+      { mode: mode },
       {
         headers: {
           Authorization: `Bearer ${token}`
@@ -199,7 +314,6 @@ const startNewConversation = async () => {
         messageInput.value.focus();
       }
     });
-
   } catch (error) {
     console.error("Error creating conversation:", error);
   } finally {
@@ -223,6 +337,10 @@ const sendMessage = async () => {
     });
     
     userInput.value = "";
+    // Reset textarea height after sending
+    if (messageInput.value) {
+      messageInput.value.style.height = 'auto';
+    }
     scrollToBottom();
     
     // Send to backend
@@ -255,7 +373,7 @@ const sendMessage = async () => {
       created_at: new Date().toISOString()
     });
   }
-};
+};;
 
 // Helper function to scroll to bottom of chat
 const scrollToBottom = () => {
@@ -349,55 +467,73 @@ onMounted(async () => {
     opacity: 0.8;
   }
   
-  .dropdown-container {
-  position: relative;
-  margin-bottom: 15px;
-}
-
-.dropdown-btn {
-  width: 100%;
-  padding: 10px;
-  background-color: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 5px;
-  color: white;
-  cursor: pointer;
-  text-align: left;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.dropdown-section {
-  margin-bottom: 15px;
-}
-
-.dropdown-btn:hover {
-  background-color: rgba(255, 255, 255, 0.2);
-}
-
-.dropdown-arrow {
-  font-size: 0.8em;
-}
-
-.dropdown-content {
-  position: absolute;
-  width: 100%;
-  background-color: #1b408d;
-  border-radius: 5px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  z-index: 1;
-}
-
-.dropdown-content div {
-  padding: 10px;
-  cursor: pointer;
-}
-
-.dropdown-content div:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
+  .loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #1b408d;
+  }
+  .loading-state .spinner {
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top: 4px solid #1b408d;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .chat-history::-webkit-scrollbar {
+    width: 6px;
+  }
+  .chat-history::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  .chat-history::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+  }
+  .chat-history::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .chat-history::-webkit-scrollbar-thumb:active {
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .chat-history::-webkit-scrollbar-thumb:vertical {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+  }
+  .chat-history::-webkit-scrollbar-thumb:vertical:hover {
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .chat-history::-webkit-scrollbar-thumb:vertical:active {
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .chat-history::-webkit-scrollbar-thumb:horizontal {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+  }
+  .chat-history::-webkit-scrollbar-thumb:horizontal:hover {
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .chat-history::-webkit-scrollbar-thumb:horizontal:active {
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .chat-history::-webkit-scrollbar-corner {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  .chat-history::-webkit-scrollbar-corner:active {
+    background: rgba(255, 255, 255, 0.3);
+  }
+  .chat-history::-webkit-scrollbar-corner:hover {
+    background: rgba(255, 255, 255, 0.5);
+  }
 .no-chats {
   padding: 10px;
   color: rgba(255, 255, 255, 0.6);
@@ -442,10 +578,6 @@ onMounted(async () => {
   font-weight: 500;
 }
 
-.chat-date {
-  font-size: 0.8em;
-  opacity: 0.7;
-}
 
 /* Style different chat types differently */
 .history-item.assignment-help {
@@ -563,15 +695,51 @@ onMounted(async () => {
     border-radius: 10px;
     padding: 5px 15px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    max-height: fit-content;
   }
   
-  .input-container input {
-    flex: 1;
-    border: none;
-    padding: 12px 0;
-    font-size: 14px;
-    outline: none;
-  }
+  input-container {
+  display: flex;
+  align-items: flex-end; /* Changed from center to flex-end */
+  background-color: white;
+  border-radius: 10px;
+  padding: 10px 15px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.input-container textarea {
+  flex: 1;
+  border: none;
+  resize: none;
+  font-size: 14px;
+  outline: none;
+  max-height: 200px; /* Maximum height before scrolling */
+  overflow-y: auto;
+  padding: 8px 0;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+/* Remove the default textarea scrollbar when not needed */
+.input-container textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.input-container textarea::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+.input-container textarea::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+}
+
+/* Adjust the send button position */
+.input-actions {
+  margin-left: 10px;
+  margin-bottom: 5px;
+}
   
   .input-actions {
     display: flex;
@@ -640,5 +808,131 @@ onMounted(async () => {
 .chat-history::-webkit-scrollbar-thumb:hover,
 .chat-messages::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
+}
+
+.mode-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.mode-dialog {
+  background-color: white;
+  padding: 25px;
+  border-radius: 10px;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.mode-dialog h3 {
+  margin-top: 0;
+  color: #1b408d;
+}
+
+.mode-dialog p {
+  margin-bottom: 20px;
+  color: #555;
+}
+
+.mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.mode-btn {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.assignment-help {
+  background-color: #24b9f9;
+  color: white;
+}
+
+.study-tips {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.mode-icon {
+  font-size: 1.2em;
+}
+
+.cancel-btn {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 8px 15px;
+  border-radius: 5px;
+}
+
+.cancel-btn:hover {
+  background-color: #f0f0f0;
+}
+
+.history-section {
+  margin-bottom: 15px;
+}
+
+.history-section-title {
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 10px 0 5px 0;
+  padding-left: 10px;
+}
+
+.conversation-icon {
+  margin-right: 8px;
+}
+
+/* Markdown formatted messages */
+.message-content {
+  white-space: pre-wrap;
+  padding: 20px;
+}
+
+.message-content h1, 
+.message-content h2, 
+.message-content h3 {
+  margin-top: 0.5em;
+  margin-bottom: 0.3em;
+}
+
+.message-content p {
+  margin-bottom: 0.8em;
+  line-height: 1.2;
+}
+
+.message-content ul, 
+.message-content ol {
+  margin-bottom: 0.8em;
+  padding-left: 1.5em;
+}
+
+.message-content li {
+  margin-bottom: 0.3em;
 }
   </style>
