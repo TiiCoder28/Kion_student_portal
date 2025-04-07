@@ -139,6 +139,9 @@ class FormattingAgent:
                     3. Maintain all original content and meaning
                     4. Use markdown formatting for better readability
                     5. Preserve any existing formatting like lists or headings
+                    6. Avoid adding any new content or changing the meaning of the text
+                    7. text denoted by ### should be treated as a header and written in italics
+                    8. text denoted by ** should be treated as a header bold text
                     """},
                     {"role": "user", "content": text}
                 ],

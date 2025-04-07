@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, unset_jwt_cookies, get_jwt
 from flask_cors import CORS  # Import CORS for handling cross-origin requests
 from flask_jwt_extended import JWTManager  # Import JWTManager for handling JWTs
 
@@ -71,3 +71,13 @@ def get_current_user():
         "last_name": user.last_name,
         "email": user.email
     })
+
+@auth_bp.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    
+    jti = get_jwt()['jti']
+
+    response = jsonify({"msg": "Successfully logged out"})
+    unset_jwt_cookies(response)
+    return response, 200
