@@ -37,9 +37,9 @@
             @click="loadConversation(conversation.id)"
           >
             <span class="conversation-icon">
-              {{ conversation.title.includes('Assignment') ? '📝' : '📚' }}
+              {{ getConversationIcon(conversation) }}
             </span>
-            {{ conversation.title.split(' - ')[0] }}
+            {{ conversation.title }}
           </div>
         </div>
         
@@ -53,9 +53,9 @@
             @click="loadConversation(conversation.id)"
           >
             <span class="conversation-icon">
-              {{ conversation.title.includes('Assignment') ? '📝' : '📚' }}
+              {{ getConversationIcon(conversation) }}
             </span>
-            {{ conversation.title.split(' - ')[0] }}
+            {{ conversation.title }}
           </div>
           <div 
             v-if="previousConversations.length > visiblePreviousChats" 
@@ -135,19 +135,37 @@
 
     <!-- New Chat Dialog -->
     <div v-if="showModeDialog" class="mode-dialog-overlay">
-      <div class="mode-dialog">
-        <h3>Start New Chat</h3>
-        <p>What type of assistance do you need?</p>
-        <div class="mode-options">
-          <button @click="createNewConversation('assignment_help')" class="mode-btn assignment-help">
-            <span class="mode-icon">📝</span>
-            <span class="mode-text">Assignment Help</span>
+  <div class="mode-dialog">
+    <h3>Start New Chat</h3>
+    <p>What type of assistance do you need?</p>
+    <div class="mode-options">
+      <button @click="selectMode('tutor')" class="mode-btn tutor-mode">
+        <span class="mode-icon">👨‍🏫</span>
+        <span class="mode-text">Tutor</span>
+      </button>
+      <button @click="selectMode('study_tips')" class="mode-btn study-tips">
+        <span class="mode-icon">📚</span>
+        <span class="mode-text">Study Tips</span>
+      </button>
+    </div>
+    
+    <!-- Tutor Sub-Mode Selection (shown only when tutor is selected) -->
+    <div v-if="selectedMode === 'tutor'" class="sub-mode-options">
+          <h4>Select Subject:</h4>
+          <button @click="createNewConversation('tutor', 'math')" class="sub-mode-btn math-tutor">
+            <span class="sub-mode-icon">🧮</span>
+            <span class="sub-mode-text">Mathematics</span>
           </button>
-          <button @click="createNewConversation('study_tips')" class="mode-btn study-tips">
-            <span class="mode-icon">📚</span>
-            <span class="mode-text">Study Tips</span>
+          <button @click="createNewConversation('tutor', 'english')" class="sub-mode-btn english-tutor">
+            <span class="sub-mode-icon">📖</span>
+            <span class="sub-mode-text">English</span>
+          </button>
+          <button @click="createNewConversation('tutor', 'general')" class="sub-mode-btn general-tutor">
+            <span class="sub-mode-icon">🌟</span>
+            <span class="sub-mode-text">General Tutor</span>
           </button>
         </div>
+        
         <button @click="showModeDialog = false" class="cancel-btn">Cancel</button>
       </div>
     </div>
@@ -159,6 +177,9 @@ import { ref, reactive, onMounted, nextTick, computed, onBeforeUnmount } from "v
 import axios from "axios";
 import { useRouter } from "vue-router";
 import { marked } from 'marked';
+import katex from "katex";
+import "katex/dist/katex.min.css";
+
 
 const API_BASE_URL = "http://localhost:5000";
 const router = useRouter();
@@ -167,7 +188,7 @@ const messageInput = ref(null);
 const showModeDialog = ref(false);
 const sidebarOpen = ref(false);
 const showScrollButton = ref(false);
-const showWelcomeMessage = ref(false);
+const selectedMode = ref(null);
 
 
 // User data
@@ -184,6 +205,8 @@ const messages = reactive([]);
 const conversations = reactive([]);
 const isTyping = ref(false);
 const visiblePreviousChats = ref(5);
+
+
 
 const userInitials = computed(() => {
   return `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`;
@@ -244,19 +267,53 @@ const previousConversations = computed(() => {
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
 });
 
+const selectMode = (mode) => {
+  if (mode === 'tutor') {
+    selectedMode.value = 'tutor';
+  } else {
+    createNewConversation(mode);
+  }
+};
+
+const getConversationIcon = (conversation) => {
+  if (!conversation) return '📚';
+  if (conversation.mode === 'study_tips') return '📚';
+  if (conversation.sub_mode === 'math') return '🧮';
+  if (conversation.sub_mode === 'english') return '📖';
+  return '🌟';
+};
+
+
 // Toggle sidebar on mobile
 const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value;
 };
 
-// Check scroll position
-const checkScrollPosition = () => {
-  const chatContainer = document.querySelector('.chat-messages');
-  if (chatContainer) {
-    const { scrollTop, scrollHeight, clientHeight } = chatContainer;
-    showScrollButton.value = scrollHeight - (scrollTop + clientHeight) > 100;
+const renderMathInMessage = async (content) => {
+  if (selectedMode.value === 'tutor' && selectedSubMode.value === 'math') {
+    return content.replace(/\$\$(.*?)\$\$/gs, (_, formula) => {
+      try {
+        return katex.renderToString(formula, {
+          throwOnError: false,
+          displayMode: true
+        });
+      } catch (err) {
+        return formula;
+      }
+    }).replace(/\$(.*?)\$/g, (_, formula) => {
+      try {
+        return katex.renderToString(formula, {
+          throwOnError: false,
+          displayMode: false
+        });
+      } catch (err) {
+        return formula;
+      }
+    });
   }
+  return content; // If not tutor/math, return content without rendering math
 };
+
 
 // Fetch user data
 const fetchUserData = async () => {
@@ -275,11 +332,17 @@ const fetchUserData = async () => {
       }
     });
     
-    user.firstName = response.data.first_name;
-    user.lastName = response.data.last_name;
-    user.email = response.data.email;
+    if (response.data && response.data.first_name) {
+      user.firstName = response.data.first_name;
+      user.lastName = response.data.last_name;
+      user.email = response.data.email;
+    } else {
+      throw new Error("Invalid user data received");
+    }
   } catch (error) {
     console.error("Error fetching user data:", error);
+    // Clear invalid token and redirect
+    localStorage.removeItem("access_token");
     router.push("/login");
   }
 };
@@ -289,12 +352,17 @@ const fetchConversations = async () => {
   try {
     loading.value = true;
     const token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
     const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-      }
+      }, withCredentials: true
     });
     
     const validatedConversations = response.data.map(conv => {
@@ -312,6 +380,11 @@ const fetchConversations = async () => {
     }
   } catch (error) {
     console.error("Error fetching conversations:", error);
+    // Handle unauthorized or invalid token
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem("access_token");
+      router.push("/login");
+    }
   } finally {
     loading.value = false;
   }
@@ -342,36 +415,71 @@ const loadConversation = async (conversationId) => {
 };
 
 // Create a new conversation
-const createNewConversation = async (mode) => {
+const createNewConversation = async (mode, subMode = null) => {
   showModeDialog.value = false;
+  selectedMode.value = null;
+  
   try {
     loading.value = true;
     const token = localStorage.getItem("access_token");
     
+    const payload = {
+      mode: mode
+    };
+    
+    if (mode === 'tutor' && subMode) {
+      payload.sub_mode = subMode;
+    }
+    
     const response = await axios.post(
       `${API_BASE_URL}/api/conversations`,
-      { mode: mode },
+      payload,
       {
         headers: {
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       }
     );
     
     conversations.unshift(response.data);
+    activeConversationId.value = response.data;
     await loadConversation(response.data.id);
+    
+    // Custom welcome messages
+    let welcomeMessage = "";
+    if (mode === 'tutor') {
+      welcomeMessage = {
+        math: "Hello! I'm your Mathematics tutor. What concepts would you like help with today?",
+        english: "Hello! I'm your English tutor. How can I assist with your language or literature needs?",
+        general: "Hello! I'm your general tutor. What would you like to learn about today?"
+      }[subMode];
+    } else {
+      welcomeMessage = "Hello! I'm here to provide study tips and learning strategies. What would you like to focus on?";
+    }
+    
+    messages.push({
+      role: "assistant",
+      content: welcomeMessage,
+      created_at: new Date().toISOString()
+    });
     
     nextTick(() => {
       if (messageInput.value) {
         messageInput.value.focus();
       }
+      scrollToBottom();
     });
   } catch (error) {
-    console.error("Error creating conversation:", error);
+    console.error("Error creating conversation:", {
+      error: error.response?.data || error.message,
+      status: error.response?.status
+    });
   } finally {
     loading.value = false;
   }
 };
+
 
 // Send a message
 const sendMessage = async () => {
@@ -380,47 +488,38 @@ const sendMessage = async () => {
   try {
     const token = localStorage.getItem("access_token");
     const messageContent = userInput.value;
-    
+
+    // If the mode is tutor and the sub-mode is math, render math formulas
+    const processedContent = await renderMathInMessage(messageContent);
+
     // Add user message
     messages.push({
       role: "user",
-      content: messageContent,
+      content: processedContent,
       created_at: new Date().toISOString()
     });
-    
+
+    // Clear input field after sending
     userInput.value = "";
-    adjustTextareaHeight();
-    await scrollToBottom();
-    
-    // Show loading indicator
-    isTyping.value = true;
-    
-    // Send to backend
-    const response = await axios.post(
-      `${API_BASE_URL}/api/conversations/${activeConversationId.value}/chat`,
-      { message: messageContent },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    
-    // Add AI response
-    messages.push({
-      role: "assistant",
-      content: marked.parse(response.data.response),
-      created_at: new Date().toISOString()
+    scrollToBottom();
+
+    // Send the message to the server
+    const payload = {
+      content: processedContent,
+      conversation_id: activeConversationId.value
+    };
+
+    await axios.post(`${API_BASE_URL}/api/messages`, payload, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
     });
-    
-    // Update conversation list
-    await fetchConversations();
+
+    isTyping.value = false; // Stop typing indicator
+
   } catch (error) {
     console.error("Error sending message:", error);
-    messages.push({
-      role: "assistant",
-      content: "Sorry, I encountered an error processing your request.",
-      created_at: new Date().toISOString()
-    });
-  } finally {
-    isTyping.value = false;
-    await scrollToBottom();
   }
 };
 
@@ -883,6 +982,50 @@ onBeforeUnmount(() => {
 .assignment-help {
   background-color: #24b9f9;
   color: white;
+}
+
+.tutor-mode {
+  background-color: #6c5ce7;
+  color: white;
+}
+
+.sub-mode-options {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.sub-mode-btn {
+  padding: 10px;
+  margin: 5px 0;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+}
+
+.math-tutor {
+  background-color: #00b894;
+  color: white;
+}
+
+.english-tutor {
+  background-color: #0984e3;
+  color: white;
+}
+
+.general-tutor {
+  background-color: #6c5ce7;
+  color: white;
+}
+
+.sub-mode-icon {
+  font-size: 1.2em;
 }
 
 .study-tips {

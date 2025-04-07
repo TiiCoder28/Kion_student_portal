@@ -7,167 +7,148 @@ from datetime import datetime
 from auth.models import Conversation, Message
 from app.database import db
 import re
+from typing import List, Dict, Optional
 
 load_dotenv()
 
 chat_bp = Blueprint("chat", __name__)
-
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 conversation_history = {}
 
-# System prompts for different assistant modes
-assistant_modes = {
-    "assignment_help": (
-        "You are a friendly and knowledgeable academic tutor dedicated to helping students understand and complete their assignments.\n"
-            "Your role is to **guide students step by step** rather than simply providing answers.\n"
-            "Encourage critical thinking, problem-solving, and independent learning while ensuring students feel supported and confident.\n\n"
+class Agent:
+    def __init__(
+        self,
+        name: str,
+        instructions: str,
+        model: str = "gpt-4",
+        tools: Optional[List] = None,
+        handoffs: Optional[List['Agent']] = None
+    ):
+        self.name = name
+        self.instructions = instructions
+        self.model = model
+        self.tools = tools or []
+        self.handoffs = handoffs or []
 
-            "**Format for Responses:**\n\n"
+    def generate_response(self, messages: List[Dict]) -> str:
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.instructions},
+                    *messages
+                ],
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Error in {self.name} agent: {e}")
+            raise
 
-            "1. **Understanding the Assignment** 🧐\n"
-            "- Greet the student warmly and ask for details about the assignment (subject, topic, word count, deadline, and any specific instructions).\n"
-            "- Clarify if they need explanations, examples, or proofreading assistance.\n"
-            "- If necessary, help them break down complex instructions into simpler parts.\n\n"
-
-            "2. **Breaking Down the Requirements** 📋\n"
-            "- Summarize the key objectives and ensure the student understands what is expected.\n"
-            "- Highlight critical aspects such as structure (essay, report, presentation) and required sources.\n"
-            "- Provide examples of well-structured assignments for reference.\n\n"
-
-            "3. **Research & Information Gathering** 🔍\n"
-            "- Suggest reliable sources (academic databases, books, credible websites) and explain how to evaluate source credibility.\n"
-            "- Share effective note-taking techniques and ways to organize research findings.\n"
-            "- If applicable, offer keyword suggestions for better search results.\n\n"
-
-            "4. **Structuring the Assignment** 🏗️\n"
-            "- Guide the student in creating a logical outline (e.g., Introduction, Main Body, Conclusion).\n"
-            "- Offer a brief framework with key points under each section.\n"
-            "- Encourage students to use headings, bullet points, and structured arguments for clarity.\n\n"
-
-            "5. **Writing & Clarity Tips** ✍️\n"
-            "- Encourage clarity, coherence, and academic tone in writing.\n"
-            "- Share tips for avoiding plagiarism, citing sources correctly, and using paraphrasing techniques.\n"
-            "- Recommend helpful tools like Grammarly for grammar checks and Turnitin for plagiarism detection.\n"
-            "- If needed, provide an example of a well-written paragraph or introduction.\n\n"
-
-            "6. **Final Review & Submission** ✅\n"
-            "- Remind the student to review their work using a checklist (grammar, structure, citations, clarity).\n"
-            "- Suggest self-review techniques, such as reading aloud or peer review.\n"
-            "- Offer words of encouragement and assure them that they can ask follow-up questions anytime!\n\n"
-
-            "**Remember:** Keep your responses engaging, encouraging, and supportive. Your goal is to make learning a positive and enjoyable experience! 😊"
-    ),
-    "study_tips": (
-        "You are a friendly and structured study coach, helping students develop effective learning strategies.\n"
-            "Your goal is to provide **personalized study techniques** that improve retention, focus, and productivity.\n"
-            "Encourage students to build **good study habits** while keeping learning enjoyable and stress-free. 😊\n\n"
-
-            "**Format for Responses:**\n\n"
-
-            "1. **Assessing Study Habits & Goals** 🎯\n"
-            "- Greet the student warmly and ask about their current study routine, challenges, and academic goals.\n"
-            "- Identify problem areas (e.g., time management, difficulty retaining information, lack of focus).\n"
-            "- Encourage self-reflection to understand their learning style (visual, auditory, kinesthetic, or reading/writing).\n\n"
-
-            "2. **Personalized Study Plan** 📚\n"
-            "- Recommend an effective study plan based on their learning style.\n"
-            "- Introduce powerful techniques such as **active recall, spaced repetition, and interleaving**.\n"
-            "- Break down the plan into **manageable daily and weekly steps** for consistency.\n"
-            "- Suggest creating a **study schedule** with set goals and review sessions.\n\n"
-
-            "3. **Time Management Strategies** ⏳\n"
-            "- Share practical tips for managing study time effectively.\n"
-            "- Recommend techniques like:\n"
-            "  - **Pomodoro Technique** (25-minute study sprints with short breaks).\n"
-            "  - **Eisenhower Matrix** (prioritizing tasks based on urgency and importance).\n"
-            "  - **Time Blocking** (allocating specific times for studying each subject).\n\n"
-
-            "4. **Recommended Tools & Resources** 🛠️\n"
-            "- Suggest **digital tools** like:\n"
-            "  - **Notion** (for organizing notes and study plans).\n"
-            "  - **Anki** (for flashcards and spaced repetition).\n"
-            "  - **Quizlet** (for interactive learning and practice tests).\n"
-            "- Recommend useful **books, websites, and YouTube channels** for their subject area.\n\n"
-
-            "5. **Motivation & Focus** 💡\n"
-            "- Share strategies to stay motivated and avoid procrastination, such as:\n"
-            "  - Setting **small, achievable goals** to track progress.\n"
-            "  - Using **study groups or accountability partners** to stay on track.\n"
-            "  - Practicing **mindfulness and deep focus techniques** (e.g., meditation, ambient study music).\n"
-            "- Encourage a **growth mindset** by reminding students that improvement takes time and effort.\n\n"
-
-            "6. **Next Steps & Continuous Improvement** 🚀\n"
-            "- Encourage the student to **track progress** and adjust their study plan as needed.\n"
-            "- Suggest keeping a **study journal** to reflect on what works best.\n"
-            "- Offer follow-up support and let them know they can reach out for **more guidance, examples, or motivation** anytime!\n\n"
-
-            "**Remember:** Your responses should be **friendly, engaging, and supportive** to help students enjoy learning and build confidence! 😊"
+math_agent = Agent(
+    name="Math Tutor (CAPS)",
+    instructions=(
+        "You are a mathematics tutor specializing in the South African CAPS curriculum for Grades 10-12.\n"
+        "Help with: Algebra, Calculus, Geometry, Trigonometry\n"
+        "Always explain concepts step-by-step with examples.\n"
+        "Format math expressions using $$LaTeX$$.\n"
+        "Encourage problem-solving rather than giving direct answers."
     )
-}
+)
+
+english_agent = Agent(
+    name="English Tutor (CAPS)",
+    instructions=(
+        "You are an English tutor for the South African CAPS curriculum.\n"
+        "Help with: Essay writing, Poetry analysis, Grammar, Prescribed texts\n"
+        "Focus on developing critical analysis and clear communication skills.\n"
+        "Provide constructive feedback on writing samples."
+    )
+)
+
+general_tutor_agent = Agent(
+    name="General Tutor",
+    instructions=(
+        "You are a knowledgeable tutor helping with general academic subjects.\n"
+        "Provide clear explanations, study tips, and learning strategies.\n"
+        "If the question is subject-specific, suggest consulting a specialist."
+    )
+)
+
+study_tips_agent = Agent(
+    name="Study Tips Coach",
+    instructions=(
+        "You provide study techniques and learning strategies.\n"
+        "Focus on: Time management, Active recall, Spaced repetition\n"
+        "Recommend tools like Anki, Notion, Quizlet\n"
+        "Help students develop effective study habits."
+    )
+)
+
+# Specialized Agents
+formatting_agent = Agent(
+    name="Response Formatter",
+    instructions=(
+        "Format text to be readable while preserving all content:\n"
+        "1. Break long paragraphs into shorter ones\n"
+        "2. Use markdown for headings, lists, and emphasis\n"
+        "3. Preserve $$LaTeX$$ math expressions\n"
+        "4. Add spacing between sections\n"
+        "5. Never change meaning or add content"
+    ),
+    model="gpt-3.5-turbo"
+)
+
+math_verification_agent = Agent(
+    name="Math Verification",
+    instructions=(
+        "Verify mathematical content:\n"
+        "1. Ensure all equations are properly formatted in $$LaTeX$$\n"
+        "2. Check mathematical accuracy\n"
+        "3. Flag potential errors\n"
+        "4. Return verified content"
+    )
+)
 
 
-def get_conversation_context(conversation_id):
+def get_conversation_context(conversation_id: int) -> List[Dict]:
     messages = Message.query.filter_by(conversation_id=conversation_id)\
                   .order_by(Message.created_at.asc()).all()
-    
     return [{"role": msg.role, "content": msg.content} for msg in messages]
 
-
-
-# Formatting Agent
-class FormattingAgent:
-    def __init__(self, client: OpenAI):
-        self.client = client
+def process_with_agents(user_message: str, conversation: Conversation) -> str:
+    messages = get_conversation_context(conversation.id)
+    messages.append({"role": "user", "content": user_message})
+    
+    try:
+        # Determine which agent to use
+        if conversation.mode == "tutor":
+            if conversation.sub_mode == "math":
+                content = math_agent.generate_response(messages)
+                content = math_verification_agent.generate_response(
+                    [{"role": "user", "content": content}]
+                )
+            elif conversation.sub_mode == "english":
+                content = english_agent.generate_response(messages)
+            else:
+                content = general_tutor_agent.generate_response(messages)
+        else:  # study_tips
+            content = study_tips_agent.generate_response(messages)
         
-    def format_response(self, text: str) -> str:
-        """Format the response to be more readable"""
-        try:
-            # Skip formatting if the text is already well-formatted
-            if self.is_well_formatted(text):
-                return text
-                
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo-16k",
-                messages=[
-                    {"role": "system", "content": """
-                    You are a formatting specialist. Your task is to:
-                    1. Break long paragraphs into shorter, digestible chunks
-                    2. Ensure proper spacing between sections
-                    3. Maintain all original content and meaning
-                    4. Use markdown formatting for better readability
-                    5. Preserve any existing formatting like lists or headings
-                    6. Avoid adding any new content or changing the meaning of the text
-                    7. text denoted by ### should be treated as a header and written in italics
-                    8. text denoted by ** should be treated as a header bold text
-                    """},
-                    {"role": "user", "content": text}
-                ],
-                temperature=0.1,
-                max_tokens=2000  # Limit to prevent excessive costs
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Formatting error: {e}")
-            return text  # Return original if formatting fails
-            
-    def is_well_formatted(self, text: str) -> bool:
-        """Check if text is already well formatted"""
-        # Check for markdown headers, lists, or multiple paragraphs
-        patterns = [
-            r'^#+\s',          # Headers
-            r'^\*\s',          # Unordered lists
-            r'^\d+\.\s',       # Ordered lists
-            r'\n\n',           # Multiple paragraphs
-            r'\*\*.*\*\*',     # Bold text
-            r'_.*_',           # Italic text
-        ]
-        return any(re.search(pattern, text) for pattern in patterns)
+        # Final formatting
+        formatted_content = formatting_agent.generate_response(
+            [{"role": "user", "content": content}]
+        )
+        
+        return formatted_content
+        
+    except Exception as e:
+        print(f"Error in agent processing: {e}")
+        return "I encountered an error processing your request. Please try again."
 
-# Initialize the formatting agent
-formatting_agent = FormattingAgent(client)
 
 
 
@@ -188,9 +169,10 @@ def get_conversations():
         return jsonify([{
             "id": conv.id,
             "title": conv.title,
+            "mode": conv.mode,
+            "sub_mode": conv.sub_mode,
             "created_at": conv.created_at.isoformat(),
-            "last_activity": last_activity.isoformat() if last_activity else conv.created_at.isoformat(),
-            "message_count": len(conv.messages)
+            "last_activity": last_activity.isoformat() if last_activity else conv.created_at.isoformat()
         } for conv, last_activity in conversations])
     except Exception as e:
         print(f"Error fetching conversations: {e}")
@@ -201,25 +183,49 @@ def get_conversations():
 @jwt_required()
 def create_conversation():
     user_id = get_jwt_identity()
-    mode = request.json.get('mode')
+    data = request.json
+    mode = data.get('mode')
+    sub_mode = data.get('sub_mode')
     
-    if not mode or mode not in assistant_modes:
-        return jsonify({"error": "Invalid mode. Choose either 'assignment_help' or 'study_tips'."}), 400
+    valid_modes = {
+        'tutor': ['math', 'english', 'general'],
+        'study_tips': []
+    }
     
+    if not mode or mode not in valid_modes:
+        return jsonify({"error": "Invalid mode"}), 400
+    if mode == 'tutor' and (not sub_mode or sub_mode not in valid_modes['tutor']):
+        return jsonify({"error": "Invalid tutor type"}), 400
+
     try:
-        # Create simple title based on mode
-        title = mode.replace('_', ' ').title()
+        # Create descriptive title
+        if mode == 'tutor':
+            title = f"Tutor - {sub_mode.capitalize()}"
+        else:
+            title = "Study Tips"
         
         new_conversation = Conversation(
             user_id=user_id,
-            title=title
+            title=title,
+            mode=mode,
+            sub_mode=sub_mode if mode == 'tutor' else None
         )
         db.session.add(new_conversation)
         db.session.flush()
         
+        # Add system message based on mode
+        if mode == 'tutor':
+            system_content = {
+                'math': math_agent.instructions,
+                'english': english_agent.instructions,
+                'general': general_tutor_agent.instructions
+            }[sub_mode]
+        else:
+            system_content = study_tips_agent.instructions
+            
         system_message = Message(
             conversation_id=new_conversation.id,
-            content=assistant_modes[mode],
+            content=system_content,
             role="system"
         )
         db.session.add(system_message)
@@ -227,13 +233,16 @@ def create_conversation():
         
         return jsonify({
             "id": new_conversation.id,
-            "title": new_conversation.title
+            "title": new_conversation.title,
+            "mode": new_conversation.mode,
+            "sub_mode": new_conversation.sub_mode
         }), 201
         
     except Exception as e:
         db.session.rollback()
         print(f"Error creating conversation: {e}")
         return jsonify({"error": "Failed to create conversation"}), 500
+
     
 
 @chat_bp.route("/conversations/<int:conversation_id>", methods=["GET"], endpoint="get_conversation")
@@ -273,7 +282,6 @@ def chat(conversation_id):
     data = request.json
     user_message = data.get('message', '').strip()
     
-    # Verify conversation belongs to user
     conversation = Conversation.query.filter_by(
         id=conversation_id, 
         user_id=user_id
@@ -282,51 +290,36 @@ def chat(conversation_id):
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
     
-    # Save user message to database
-    user_msg = Message(
-        conversation_id=conversation_id,
-        content=user_message,
-        role="user",
-        created_at=datetime.utcnow()
-    )
-    db.session.add(user_msg)
-    
-    # Get conversation context for OpenAI
-    messages = get_conversation_context(conversation_id)
-    
     try:
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.3
+        # Save user message
+        user_msg = Message(
+            conversation_id=conversation_id,
+            content=user_message,
+            role="user",
+            created_at=datetime.utcnow()
         )
+        db.session.add(user_msg)
         
-        ai_response = response.choices[0].message.content.strip()
+        # Process with agent pipeline
+        ai_response = process_with_agents(user_message, conversation)
         
-        # Format the response using our agent
-        formatted_response = formatting_agent.format_response(ai_response)
-        
-        # Save AI response to database (store as markdown)
+        # Save AI response
         ai_msg = Message(
             conversation_id=conversation_id,
-            content=formatted_response,
+            content=ai_response,
             role="assistant",
-            created_at=datetime.utcnow(),
-            tokens=response.usage.total_tokens if hasattr(response, 'usage') else None
+            created_at=datetime.utcnow()
         )
         db.session.add(ai_msg)
-        
-        # Update conversation timestamp
         conversation.updated_at = datetime.utcnow()
         db.session.commit()
         
         return jsonify({
-            "response": formatted_response,  # Return formatted but not markdown-converted
+            "response": ai_response,
             "conversation_id": conversation_id
         })
         
     except Exception as e:
         db.session.rollback()
         print(f"Error in chat endpoint: {e}")
-        return jsonify({"error": "An error occurred while processing your request"}), 500
+        return jsonify({"error": str(e)}), 500

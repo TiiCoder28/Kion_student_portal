@@ -1,8 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, unset_jwt_cookies, get_jwt
-from flask_cors import CORS  # Import CORS for handling cross-origin requests
-from flask_jwt_extended import JWTManager  # Import JWTManager for handling JWTs
-
+from flask_cors import CORS  
+from flask_jwt_extended import JWTManager 
 from .models import User  # Import the User model from the models module
 from app.database import db  # Import the shared SQLAlchemy instance
 
@@ -55,7 +54,12 @@ def login():
 
     # Generate a JWT token
     access_token = create_access_token(identity=user.id)
-    return jsonify({"access_token": access_token}), 200
+    return jsonify({"access_token": access_token,
+                    "user": {
+                        "first_name" : user.first_name,
+                        "email" : user.email,
+                    }
+                    }), 200
 
 @auth_bp.route('/user', methods=['GET'])
 @jwt_required()
