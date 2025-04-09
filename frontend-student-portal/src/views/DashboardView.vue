@@ -102,15 +102,15 @@
         
         <!-- Scroll to bottom button -->
         <button 
-        v-if="showScrollButton" 
-        class="scroll-to-bottom" 
-        @click="scrollToBottom"
-        aria-label="Scroll to bottom"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 5v14M19 12l-7 7-7-7"/>
-        </svg>
-      </button>
+            v-if="showScrollButton" 
+            class="scroll-to-bottom" 
+            @click="scrollToBottom()"
+            aria-label="Scroll to bottom"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14M19 12l-7 7-7-7"/>
+            </svg>
+          </button>
         
         <div class="chat-input">
           <div class="input-container">
@@ -241,30 +241,30 @@ const todaysConversations = computed(() => {
   const today = new Date().toISOString().split('T')[0];
   return conversations
     .filter(conv => {
-      if (!conv.created_at) return false;
+      if (!conv.last_activity) return false;
       try {
-        const convDate = new Date(conv.created_at).toISOString().split('T')[0];
+        const convDate = new Date(conv.last_activity).toISOString().split('T')[0];
         return convDate === today;
       } catch (e) {
         return false;
       }
     })
-    .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+    .sort((a, b) => new Date(b.last_activity) - new Date(a.last_activity));
 });
 
 const previousConversations = computed(() => {
   const today = new Date().toISOString().split('T')[0];
   return conversations
     .filter(conv => {
-      if (!conv.created_at) return false;
+      if (!conv.last_activity) return false;
       try {
-        const convDate = new Date(conv.created_at).toISOString().split('T')[0];
+        const convDate = new Date(conv.last_activity).toISOString().split('T')[0];
         return convDate !== today;
       } catch (e) {
         return false;
       }
     })
-    .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+    .sort((a, b) => new Date(b.last_activity) - new Date(a.last_activity));
 });
 
 const selectMode = (mode) => {
@@ -382,13 +382,15 @@ const fetchConversations = async () => {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-      }, withCredentials: true
+      }, 
+      withCredentials: true
     });
     
+    // Ensure all conversations have last_activity
     const validatedConversations = response.data.map(conv => {
-      if (!conv.created_at) {
-        console.warn("Conversation missing created_at:", conv.id);
-        conv.created_at = new Date().toISOString();
+      if (!conv.last_activity) {
+        console.warn("Conversation missing last_activity:", conv.id);
+        conv.last_activity = conv.created_at || new Date().toISOString();
       }
       return conv;
     });
@@ -400,7 +402,6 @@ const fetchConversations = async () => {
     }
   } catch (error) {
     console.error("Error fetching conversations:", error);
-    // Handle unauthorized or invalid token
     if (error.response && error.response.status === 401) {
       localStorage.removeItem("access_token");
       router.push("/login");
@@ -520,38 +521,48 @@ const sendMessage = async () => {
     const token = localStorage.getItem("access_token");
     const messageContent = userInput.value;
     
-    // Add user message (store raw content)
-    messages.push({
+    // Add user message
+    const userMsg = {
       role: "user",
       content: messageContent,
       formattedContent: await formatMessageContent(messageContent),
       created_at: new Date().toISOString()
-    });
+    };
+    messages.push(userMsg);
     
     userInput.value = "";
     adjustTextareaHeight();
     await scrollToBottom();
     
-    // Show loading indicator
     isTyping.value = true;
     
-    // Send to backend
     const response = await axios.post(
       `${API_BASE_URL}/api/conversations/${activeConversationId.value}/chat`,
       { message: messageContent },
       { headers: { Authorization: `Bearer ${token}` } }
     );
     
-    // Add AI response with formatted content
-    messages.push({
+    const aiMsg = {
       role: "assistant",
-      content: response.data.response,  // raw markdown
+      content: response.data.response,
       formattedContent: await formatMessageContent(response.data.response),
       created_at: new Date().toISOString()
-    });
+    };
+    messages.push(aiMsg);
     
-    // Update conversation list
-    await fetchConversations();
+    
+    const now = new Date().toISOString();
+    const convIndex = conversations.findIndex(c => c.id === activeConversationId.value);
+    if (convIndex > -1) {
+      conversations[convIndex].last_activity = now;
+      
+      // Move to top if not already there
+      if (convIndex > 0) {
+        const [activeConv] = conversations.splice(convIndex, 1);
+        conversations.unshift(activeConv);
+      }
+    }
+    
   } catch (error) {
     console.error("Error sending message:", error);
     messages.push({
@@ -568,13 +579,13 @@ const sendMessage = async () => {
 
 
 // Helper function to scroll to bottom of chat
-const scrollToBottom = async () => {
+const scrollToBottom = async (behavior = 'smooth') => {
   await nextTick();
   const chatContainer = document.querySelector('.chat-messages');
   if (chatContainer) {
     chatContainer.scrollTo({
       top: chatContainer.scrollHeight,
-      behavior: 'smooth'
+      behavior: behavior
     });
   }
   showScrollButton.value = false;
@@ -583,13 +594,13 @@ const scrollToBottom = async () => {
 // Initialize component
 onMounted(async () => {
   // Add scroll event listener
-  const checkScrollPosition = () => {
-    const chatContainer = document.querySelector('.chat-messages');
-    if (chatContainer) {
-      const { scrollTop, scrollHeight, clientHeight } = chatContainer;
+  const chatMessages = document.querySelector('.chat-messages');
+  if (chatMessages) {
+    chatMessages.addEventListener('scroll', () => {
+      const { scrollTop, scrollHeight, clientHeight } = chatMessages;
       showScrollButton.value = scrollHeight - (scrollTop + clientHeight) > 100;
-    }
-  };
+    });
+  }
 
   nextTick(() => {
     if(messageInput.value) {
@@ -631,6 +642,7 @@ onMounted(async () => {
   
   await fetchUserData();
   await fetchConversations();
+  await scrollToBottom('auto');
 });
 
 const showUserMenu = ref(false);
@@ -1214,13 +1226,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 5;
+  z-index: 100;
   transition: all 0.2s;
+  opacity: 0.9;
 }
 
 .scroll-to-bottom:hover {
   background-color: #1da7e6;
   transform: scale(1.1);
+  opacity: 1;
+}
+
+.scroll-to-bottom svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* Sidebar toggle button for mobile */
