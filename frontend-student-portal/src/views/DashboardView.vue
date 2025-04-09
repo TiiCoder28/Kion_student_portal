@@ -83,7 +83,7 @@
                 <span v-if="message.role === 'assistant'">AI</span>
                 <span v-else>{{ userInitials }}</span>
               </div>
-              <div class="message-content" v-html="message.content"></div>
+              <div class="message-content" v-html="message.formattedContent"></div>
             </div>
           </div>
           <div v-if="isTyping" class="message-container">
@@ -289,29 +289,49 @@ const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value;
 };
 
-const renderMathInMessage = async (content) => {
-  if (selectedMode.value === 'tutor' && selectedSubMode.value === 'math') {
-    return content.replace(/\$\$(.*?)\$\$/gs, (_, formula) => {
-      try {
-        return katex.renderToString(formula, {
-          throwOnError: false,
-          displayMode: true
-        });
-      } catch (err) {
-        return formula;
-      }
-    }).replace(/\$(.*?)\$/g, (_, formula) => {
-      try {
-        return katex.renderToString(formula, {
-          throwOnError: false,
-          displayMode: false
-        });
-      } catch (err) {
-        return formula;
-      }
-    });
+const formatMessageContent = async (content) => {
+  try {
+    // First process with marked for markdown
+    let processed = marked(content || '');
+    
+    // Then process math expressions if this is a math conversation
+    processed = await renderMathInMessage(processed);
+    
+    return processed;
+  } catch (e) {
+    console.error("Formatting error:", e);
+    return content; // Fallback to original content
   }
-  return content; // If not tutor/math, return content without rendering math
+};
+
+const renderMathInMessage = async (content) => {
+  // Process display math ($$...$$)
+  let processed = content.replace(/\$\$(.*?)\$\$/gs, (_, formula) => {
+    try {
+      return katex.renderToString(formula, {
+        throwOnError: false,
+        displayMode: true
+      });
+    } catch (err) {
+      console.error("Error rendering math:", err);
+      return `<div class="math-error">$${formula}$</div>`;
+    }
+  });
+  
+  // Process inline math ($...$)
+  processed = processed.replace(/\$(.*?)\$/g, (_, formula) => {
+    try {
+      return katex.renderToString(formula, {
+        throwOnError: false,
+        displayMode: false
+      });
+    } catch (err) {
+      console.error("Error rendering inline math:", err);
+      return `<span class="math-error">$${formula}$</span>`;
+    }
+  });
+  
+  return processed;
 };
 
 
@@ -405,14 +425,25 @@ const loadConversation = async (conversationId) => {
       }
     });
     
-    messages.splice(0, messages.length, ...response.data.messages.filter(m => m.role !== 'system'));
+    // Clear existing messages
+    messages.splice(0, messages.length);
+    
+    // Process and add messages one by one
+    for (const msg of response.data.messages.filter(m => m.role !== 'system')) {
+      const formattedContent = await formatMessageContent(msg.content);
+      messages.push({
+        ...msg,
+        formattedContent: formattedContent
+      });
+    }
+    
     scrollToBottom();
   } catch (error) {
     console.error("Error loading conversation:", error);
   } finally {
     loading.value = false;
   }
-};
+}
 
 // Create a new conversation
 const createNewConversation = async (mode, subMode = null) => {
@@ -488,40 +519,53 @@ const sendMessage = async () => {
   try {
     const token = localStorage.getItem("access_token");
     const messageContent = userInput.value;
-
-    // If the mode is tutor and the sub-mode is math, render math formulas
-    const processedContent = await renderMathInMessage(messageContent);
-
-    // Add user message
+    
+    // Add user message (store raw content)
     messages.push({
       role: "user",
-      content: processedContent,
+      content: messageContent,
+      formattedContent: await formatMessageContent(messageContent),
       created_at: new Date().toISOString()
     });
-
-    // Clear input field after sending
+    
     userInput.value = "";
-    scrollToBottom();
-
-    // Send the message to the server
-    const payload = {
-      content: processedContent,
-      conversation_id: activeConversationId.value
-    };
-
-    await axios.post(`${API_BASE_URL}/api/messages`, payload, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+    adjustTextareaHeight();
+    await scrollToBottom();
+    
+    // Show loading indicator
+    isTyping.value = true;
+    
+    // Send to backend
+    const response = await axios.post(
+      `${API_BASE_URL}/api/conversations/${activeConversationId.value}/chat`,
+      { message: messageContent },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    // Add AI response with formatted content
+    messages.push({
+      role: "assistant",
+      content: response.data.response,  // raw markdown
+      formattedContent: await formatMessageContent(response.data.response),
+      created_at: new Date().toISOString()
     });
-
-    isTyping.value = false; // Stop typing indicator
-
+    
+    // Update conversation list
+    await fetchConversations();
   } catch (error) {
     console.error("Error sending message:", error);
+    messages.push({
+      role: "assistant",
+      content: "Sorry, I encountered an error processing your request.",
+      formattedContent: "Sorry, I encountered an error processing your request.",
+      created_at: new Date().toISOString()
+    });
+  } finally {
+    isTyping.value = false;
+    await scrollToBottom();
   }
 };
+
 
 // Helper function to scroll to bottom of chat
 const scrollToBottom = async () => {
@@ -1046,21 +1090,63 @@ onBeforeUnmount(() => {
   background-color: #f0f0f0;
 }
 
+.katex {
+  font-size: 1.1em !important;
+}
+
+.katex-display {
+  margin: 0.5em 0;
+  padding: 0.5em;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.math-error {
+  color: #e74c3c;
+  background-color: #fde8e8;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
 .message-content {
   white-space: pre-wrap;
   padding: 20px;
 }
 
+.message-content :is(strong, b) {
+  font-weight: bold;
+}
+
+.message-content :is(em, i) {
+  font-style: italic;
+}
+
 .message-content h1, 
 .message-content h2, 
-.message-content h3 {
-  margin-top: 0.5em;
-  margin-bottom: 0.3em;
+.message-content h3, 
+.message-content h4 {
+  margin: 0.5em 0;
+  font-weight: bold;
 }
+
+.message-content h1 {
+  font-size: 1.5em;
+}
+
+.message-content h2 {
+  font-size: 1.3em;
+}
+
+.message-content h3 {
+  font-size: 1.1em;
+}
+
 
 .message-content p {
   margin-bottom: 0.8em;
   line-height: 1.2;
+  font-size: 0.8em;
 }
 
 .message-content ul, 
@@ -1071,11 +1157,6 @@ onBeforeUnmount(() => {
 
 .message-content li {
   margin-bottom: 0.3em;
-}
-
-.assignment-help {
-  background-color: #24b9f9;
-  color: white;
 }
 
 .study-tips {

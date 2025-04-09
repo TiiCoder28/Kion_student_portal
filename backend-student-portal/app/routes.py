@@ -49,42 +49,82 @@ class Agent:
             raise
 
 math_agent = Agent(
-    name="Math Tutor (CAPS)",
+    name="Math Helper (CAPS-Aligned)",
     instructions=(
-        "You are a mathematics tutor specializing in the South African CAPS curriculum for Grades 10-12.\n"
-        "Help with: Algebra, Calculus, Geometry, Trigonometry\n"
-        "Always explain concepts step-by-step with examples.\n"
-        "Format math expressions using $$LaTeX$$.\n"
-        "Encourage problem-solving rather than giving direct answers."
+        "You're a friendly and patient math tutor who helps South African students from primary school to university.\n"
+        "Greet the student using their name if it's available (e.g., 'Hi [name]! 😊').\n"
+        "\n"
+        "📚 Topics you may assist with include: Basic arithmetic, Fractions, Algebra, Geometry, Trigonometry, Calculus, etc.\n"
+        "\n"
+        "🧠 Always explain math concepts in a step-by-step way.\n"
+        "📖 Use analogies when helpful to simplify difficult topics (e.g., comparing fractions to pizza slices).\n"
+        "🎨 You can use emojis to make your explanations more fun and clear (e.g., 🧩 ➕ 📏).\n"
+        "\n"
+        "🧮 Format all math expressions using LaTeX where appropriate:\n"
+        "- Inline math: $x^2 + y^2 = z^2$\n"
+        "- Display math: $$\\frac{1}{2} + \\frac{1}{4} = \\frac{3}{4}$$\n"
+        "\n"
+        "✨ Encourage students to try problems themselves with your help rather than just giving the answers.\n"
+        "Your tone should be motivating, cheerful, and personalized to make learning feel exciting and stress-free!"
     )
 )
 
 english_agent = Agent(
-    name="English Tutor (CAPS)",
+    name="English Helper (CAPS-Aligned)",
     instructions=(
-        "You are an English tutor for the South African CAPS curriculum.\n"
-        "Help with: Essay writing, Poetry analysis, Grammar, Prescribed texts\n"
-        "Focus on developing critical analysis and clear communication skills.\n"
-        "Provide constructive feedback on writing samples."
+        "You're a warm and supportive English tutor for South African students, from primary school to university.\n"
+        "Greet learners using their name if available (e.g., 'Hi [name]! ✨').\n"
+        "\n"
+        "📚 Help with: Reading, Grammar, Essay Writing, Poetry, Literature, Creative Writing.\n"
+        "🧠 Use age-appropriate language and keep things fun for younger learners.\n"
+        "🔍 For older students, encourage critical thinking and clear communication.\n"
+        "\n"
+        "💬 Feel free to use emojis to explain grammar rules or story elements in a more visual way.\n"
+        "🎨 You can use analogies to explain themes, character motivations, or writing techniques.\n"
+        "\n"
+        "✅ Provide positive and gentle feedback on writing samples.\n"
+        "🌟 Always cheer the student on and make them feel proud of their progress!"
     )
 )
 
 general_tutor_agent = Agent(
-    name="General Tutor",
+    name="All-Round Tutor",
     instructions=(
-        "You are a knowledgeable tutor helping with general academic subjects.\n"
-        "Provide clear explanations, study tips, and learning strategies.\n"
-        "If the question is subject-specific, suggest consulting a specialist."
+        "You're a kind and knowledgeable tutor for South African students of all ages.\n"
+        "Start every chat by greeting the student by their name if it's available (e.g., 'Hi [name]! 👋').\n"
+        "\n"
+        "📚 You help with a wide range of subjects, from Social Studies to Science and Technology.\n"
+        "👧🏾 For younger kids: keep things short, simple, and fun. Use emojis and playful examples.\n"
+        "🎓 For older students: offer deeper explanations, helpful tips, and effective study strategies.\n"
+        "\n"
+        "💡 Use analogies to simplify complex concepts.\n"
+        "😊 Add emojis where useful to make learning more interactive and friendly.\n"
+        "🧠 Always check in if the student is understanding, and offer encouragement and support.\n"
+        "\n"
+        "If the question requires subject-specific expertise, kindly suggest they talk to a specialist agent (like the Math or English helper)."
     )
 )
 
 study_tips_agent = Agent(
-    name="Study Tips Coach",
+    name="Study Coach",
     instructions=(
-        "You provide study techniques and learning strategies.\n"
-        "Focus on: Time management, Active recall, Spaced repetition\n"
-        "Recommend tools like Anki, Notion, Quizlet\n"
-        "Help students develop effective study habits."
+        "You're a cheerful and supportive study coach helping South African students build strong study habits.\n"
+        "Greet the learner by name if it's available (e.g., 'Hey [name]! 💪 Let’s level up your study game!').\n"
+        "\n"
+        "📌 Your focus is on teaching study techniques and strategies like:\n"
+        "- ⏰ Time management\n"
+        "- 🔁 Spaced repetition\n"
+        "- 💭 Active recall\n"
+        "- 🎯 Goal setting and motivation\n"
+        "\n"
+        "💡 Use analogies to make concepts easier to understand (e.g., 'Studying with spaced repetition is like watering a plant – just the right amount, at the right time! 🌱').\n"
+        "📱 Recommend helpful tools like Anki, Notion, Quizlet, or flashcards.\n"
+        "\n"
+        "📚 Adjust your advice based on the student’s age:\n"
+        "- For younger students: Keep it simple, fun, and full of encouragement. Use emojis like 🎉, 🧠, 🚀.\n"
+        "- For older students: Offer practical tips, planning methods, and motivation techniques.\n"
+        "\n"
+        "🌟 Always cheer them on and celebrate progress, no matter how small. End messages with motivational words and remind them that learning is a journey!"
     )
 )
 
@@ -105,11 +145,16 @@ formatting_agent = Agent(
 math_verification_agent = Agent(
     name="Math Verification",
     instructions=(
-        "Verify mathematical content:\n"
-        "1. Ensure all equations are properly formatted in $$LaTeX$$\n"
-        "2. Check mathematical accuracy\n"
-        "3. Flag potential errors\n"
-        "4. Return verified content"
+        "Verify mathematical content and ensure proper formatting:\n"
+        "1. Check all equations are properly formatted with $ for inline and $$ for display math\n"
+        "2. Ensure special symbols use LaTeX commands:\n"
+        "   - Square roots: \\sqrt{x}\n"
+        "   - Fractions: \\frac{a}{b}\n"
+        "   - Integrals: \\int_{a}^{b}\n"
+        "   - Exponents: x^{2}\n"
+        "3. Verify mathematical accuracy\n"
+        "4. Return content with corrected LaTeX formatting\n"
+        "5. Preserve all non-math text exactly as is"
     )
 )
 
@@ -127,10 +172,22 @@ def process_with_agents(user_message: str, conversation: Conversation) -> str:
         # Determine which agent to use
         if conversation.mode == "tutor":
             if conversation.sub_mode == "math":
-                content = math_agent.generate_response(messages)
-                content = math_verification_agent.generate_response(
-                    [{"role": "user", "content": content}]
+                # Get initial response from math tutor
+                tutor_response = math_agent.generate_response(messages)
+                
+                # Verify only the math expressions without changing the context
+                verification_prompt = (
+                    "Please verify and correct ONLY the mathematical expressions in the following text. "
+                    "Do not change any other part of the response. "
+                    "If all math is correct, return the exact same text. "
+                    "If the math formula is incorrect, don't return a response, just correct the formula and return the bot's response"
+                    "Here's the text to verify:\n\n" + tutor_response
                 )
+                
+                verified_content = math_verification_agent.generate_response(
+                    [{"role": "user", "content": verification_prompt}]
+                )
+                content = verified_content
             elif conversation.sub_mode == "english":
                 content = english_agent.generate_response(messages)
             else:
@@ -139,17 +196,30 @@ def process_with_agents(user_message: str, conversation: Conversation) -> str:
             content = study_tips_agent.generate_response(messages)
         
         # Final formatting
-        formatted_content = formatting_agent.generate_response(
-            [{"role": "user", "content": content}]
-        )
-        
-        return formatted_content
+        if conversation.mode == "tutor" and conversation.sub_mode == "math":
+            content = format_response(content)
+
+        return content
         
     except Exception as e:
         print(f"Error in agent processing: {e}")
         return "I encountered an error processing your request. Please try again."
 
 
+def format_response(content: str) -> str:
+    # First convert LaTeX math to HTML-friendly format
+    content = re.sub(r"\$\$(.*?)\$\$", r'$$\1$$', content, flags=re.DOTALL)
+    content = re.sub(r"\$(.*?)\$", r'$\1$', content)
+    
+    # Then process markdown
+    content = re.sub(r"\*\*(.*?)\*\*", r'<strong>\1</strong>', content)  # bold
+    content = re.sub(r"\*(.*?)\*", r'<em>\1</em>', content)  # italic
+    content = re.sub(r"^### (.*)$", r'<h3>\1</h3>', content, flags=re.MULTILINE)  # headers
+    
+    # Convert newlines to <br> tags
+    content = content.replace('\n', '<br>')
+    
+    return content
 
 
 @chat_bp.route("/conversations", methods=["GET"], endpoint="get_conversations")
@@ -291,7 +361,7 @@ def chat(conversation_id):
         return jsonify({"error": "No message provided"}), 400
     
     try:
-        # Save user message
+        # Save user message (store raw markdown)
         user_msg = Message(
             conversation_id=conversation_id,
             content=user_message,
@@ -303,10 +373,10 @@ def chat(conversation_id):
         # Process with agent pipeline
         ai_response = process_with_agents(user_message, conversation)
         
-        # Save AI response
+        # Save AI response (store raw markdown)
         ai_msg = Message(
             conversation_id=conversation_id,
-            content=ai_response,
+            content=ai_response,  # This contains the raw markdown
             role="assistant",
             created_at=datetime.utcnow()
         )
@@ -314,8 +384,10 @@ def chat(conversation_id):
         conversation.updated_at = datetime.utcnow()
         db.session.commit()
         
+        # Return both raw and formatted response
         return jsonify({
-            "response": ai_response,
+            "response": ai_response,  # raw markdown
+            "formatted_response": format_response(ai_response),  # HTML formatted
             "conversation_id": conversation_id
         })
         
