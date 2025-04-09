@@ -74,7 +74,7 @@ app = create_app()
 
 if __name__ == "__main__":
     with app.app_context():
-        try:
+        try: 
             db.create_all()
         except Exception as e:
             print(f"❌ Error: {str(e)}")
