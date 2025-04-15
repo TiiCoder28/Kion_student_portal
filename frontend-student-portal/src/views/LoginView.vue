@@ -46,16 +46,14 @@ const handleLogin = async () => {
 
     if (response.status === 200) {
       const { access_token } = response.data;
-      localStorage.setItem("access_token", access_token); // Store the token
-    
-      alert("Login successful!");
-      router.push("/dashboard"); // Redirect to dashboard
+      localStorage.setItem("access_token", access_token);
+      router.push("/dashboard");
     }
-    } catch (error) {
-      console.error("Login failed:", error);
-      alert("Login failed. Please check your credentials and try again.");
-    }
-  };
+  } catch (error) {
+    console.error("Login failed:", error);
+  }
+};
+
   </script>
   
   <style scoped>

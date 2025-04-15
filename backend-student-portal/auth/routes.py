@@ -38,43 +38,53 @@ def signup():
         "user": {
             "first_name": new_user.first_name,
             "last_name": new_user.last_name,
+            "email": new_user.email
         }
     }), 201
 
-@auth_bp.route('/login', methods=['POST'], endpoint='login')
+@auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.json
     email = data.get('email')
     password = data.get('password')
 
-    # Find the user by email
     user = User.query.filter_by(email=email).first()
     if not user or not user.check_password(password):
         return jsonify({"error": "Invalid email or password"}), 401
 
-    # Generate a JWT token
-    access_token = create_access_token(identity=user.id)
-    return jsonify({"access_token": access_token,
-                    "user": {
-                        "first_name" : user.first_name,
-                        "email" : user.email,
-                    }
-                    }), 200
-
-@auth_bp.route('/user', methods=['GET'])
-@jwt_required()
-def get_current_user():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-        
+    # Convert user.id to string explicitly
+    access_token = create_access_token(identity=str(user.id))
+    
     return jsonify({
-        "id": user.id,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "email": user.email
-    })
+        "access_token": access_token,
+        "user": {
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email
+        }
+    }), 200
+
+
+@auth_bp.route("/user", methods=["GET"])
+@jwt_required()
+def get_user():
+    try:
+        user_id = get_jwt_identity()
+        if not user_id:
+            return jsonify({"error": "Invalid token"}), 401
+            
+        # Convert to int since your DB likely uses integer IDs
+        user = User.query.get(int(user_id))
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        return jsonify({
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()

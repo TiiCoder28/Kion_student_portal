@@ -12,8 +12,8 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     CORS(app, resources={
-    r"/auth/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]},
-    r"/api/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}
+    r"/auth/*": {"origins": "http://localhost:5176", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]},
+    r"/api/*": {"origins": "http://localhost:5176", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}
 },  supports_credentials=True)  
     exposed_headers = ['Authorization', 'Content-Type']
     app.after_request(lambda response: (response.headers.add('Access-Control-Expose-Headers', ', '.join(exposed_headers)), response)[1])
@@ -25,8 +25,8 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = DB_URI
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY")
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
     app.config['JWT_TOKEN_LOCATION'] = ['headers']
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 36000 # 1 hour
     app.config['JWT_HEADER_NAME'] = 'Authorization'
     app.config['JWT_HEADER_TYPE'] = 'Bearer'
     
@@ -35,8 +35,6 @@ def create_app():
     if not app.config['JWT_SECRET_KEY']:
         raise ValueError("JWT_SECRET_KEY not found in .env file")
     
-    app.config['JWT_TOKEN_LOCATION'] = ['headers']
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 36000 # 1 hour
     jwt = JWTManager(app)  # Initialize JWTManager
 
     # Initialize database
