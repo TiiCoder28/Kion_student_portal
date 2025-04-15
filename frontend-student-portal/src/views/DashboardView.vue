@@ -76,8 +76,28 @@
       </div>
       
       <div v-else class="chat-container">
+
+        <h2 class="chat-title">
+          {{ activeConversationId ? conversations.find(c => c.id === activeConversationId)?.title : 'Select a conversation' }}
+        </h2>
+        
+        <div v-if="showWelcomeMessage" class="welcome-message">
+          <h3>Welcome, {{ user.firstName }}! 👋. My name is Thuto</h3>
+          <p>Get started by choosing a conversation from the sidebar or typing your first message below.</p>
+          <div class="welcome-illustration">
+            <div class="robot-icon">🤖</div>
+            <p class="tip-text">
+              Pro tip: You can say things like<br>
+              <span v-for="(tip, index) in getModeSpecificTips()" :key="index">
+                "{{ tip }}"<br v-if="index < getModeSpecificTips().length - 1">
+              </span>
+            </p>
+          </div>
+        </div>
         <div class="chat-messages">
-          <div v-for="(message, index) in messages" :key="index" class="message-container">
+          <div v-for="(message, index) in messages.filter(m => m.role !== 'system')" 
+            :key="index" 
+            class="message-container">
             <div :class="['message', message.role === 'assistant' ? 'ai-message' : 'user-message']">
               <div class="avatar" :class="message.role">
                 <span v-if="message.role === 'assistant'">AI</span>
@@ -220,6 +240,10 @@ const loadMoreChats = () => {
   visiblePreviousChats.value += 5;
 };
 
+const showWelcomeMessage = computed(() => {
+  return messages.length === 0 || !activeConversationId.value;
+});
+
 const handleKeyDown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -235,6 +259,63 @@ const adjustTextareaHeight = () => {
       textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
     }
   });
+};
+
+const currentConversationMode = computed(() => {
+  if (!activeConversationId.value) return null;
+  const conv = conversations.find(c => c.id === activeConversationId.value);
+  return conv ? { mode: conv.mode, sub_mode: conv.sub_mode } : null;
+});
+
+const getModeSpecificTips = () => {
+  if (!currentConversationMode.value) {
+    return [
+      "Help me with algebra basics",
+      "Create a study schedule for exams",
+      "Explain photosynthesis to me"
+    ];
+  }
+
+  const { mode, sub_mode } = currentConversationMode.value;
+  
+  if (mode === 'tutor') {
+    switch(sub_mode) {
+      case 'math':
+        return [
+          "Help me solve this quadratic equation: x² + 5x + 6 = 0",
+          "What is the Pythagorean theorem?",
+          "Explain derivatives in calculus"
+        ];
+      case 'english':
+        return [
+          "Name the different parts of speech",
+          "Help me analyze this poem",
+          "What's the difference between active and passive voice?"
+        ];
+      case 'general':
+        return [
+          "Explain the scientific method",
+          "Help me understand World War II causes",
+          "What are Newton's laws of motion?"
+        ];
+      default:
+        return [
+          "Help me with algebra basics",
+          "Create a study schedule for exams"
+        ];
+    }
+  } else if (mode === 'study_tips') {
+    return [
+      "How can I improve my focus while studying?",
+      "What's the Pomodoro technique?",
+      "Best ways to prepare for final exams"
+    ];
+  }
+  
+  return [
+    "Help me with algebra basics",
+    "Create a study schedule for exams"
+  ];
 };
 
 const todaysConversations = computed(() => {
@@ -400,7 +481,12 @@ const fetchConversations = async () => {
     
     if (conversations.length > 0) {
       await loadConversation(conversations[0].id);
+    } else {
+      // No conversations exist - ensure welcome message shows
+      activeConversationId.value = null;
+      messages.splice(0, messages.length);
     }
+
   } catch (error) {
     console.error("Error fetching conversations:", error);
     if (error.response && error.response.status === 401) {
@@ -427,12 +513,16 @@ const loadConversation = async (conversationId) => {
     
     messages.splice(0, messages.length);
 
-    for (const msg of response.data.messages.filter(m => m.role !== 'system')) {
-      const formattedContent = await formatMessageContent(msg.content);
-      messages.push({
-        ...msg,
-        formattedContent: formattedContent
-      });
+    if (response.data.messages && response.data.messages.length > 0) {
+      for (const msg of response.data.messages) {
+        if (msg.role === 'system') continue; // Skip system messages
+        
+        const formattedContent = await formatMessageContent(msg.content);
+        messages.push({
+          ...msg,
+          formattedContent: formattedContent
+        });
+      }
     }
     
     scrollToBottom();
@@ -476,20 +566,26 @@ const createNewConversation = async (mode, subMode = null) => {
     activeConversationId.value = response.data;
     await loadConversation(response.data.id);
 
+    messages.splice(0, messages.length);
+
     let welcomeMessage = "";
     if (mode === 'tutor') {
       welcomeMessage = {
-        math: "Hello! I'm your Mathematics tutor. What concepts would you like help with today?",
-        english: "Hello! I'm your English tutor. How can I assist with your language or literature needs?",
-        general: "Hello! I'm your general tutor. What would you like to learn about today?"
+        math: `Hi ${user.firstName}! 👋 I'm your Mathematics tutor. What concepts would you like help with today?`,
+        english: `Hello ${user.firstName}! 📚 I'm your English tutor. How can I assist you today?`,
+        general: `Hi there ${user.firstName}! 🌟 I'm your general tutor. What would you like to learn about?`
       }[subMode];
     } else {
-      welcomeMessage = "Hello! I'm here to provide study tips and learning strategies. What would you like to focus on?";
+      welcomeMessage = `Hey ${user.firstName}! 🚀 Let's build some awesome study habits! Where should we start?`;
     }
+    
+    // Format the welcome message properly
+    const formattedWelcome = await formatMessageContent(welcomeMessage);
     
     messages.push({
       role: "assistant",
       content: welcomeMessage,
+      formattedContent: formattedWelcome,
       created_at: new Date().toISOString()
     });
     
@@ -508,7 +604,6 @@ const createNewConversation = async (mode, subMode = null) => {
     loading.value = false;
   }
 };
-
 
 // Send a message
 const sendMessage = async () => {
@@ -1028,9 +1123,67 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-.assignment-help {
-  background-color: #24b9f9;
+.chat-title {
   color: white;
+  text-align: center;
+  padding: 1rem 0;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.welcome-message {
+  text-align: center;
+  padding: 2rem;
+  color: white;
+  animation: fadeIn 0.5s ease-in;
+}
+
+.welcome-message h3 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: #24b9f9;
+}
+
+.welcome-message p {
+  font-size: 1rem;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+.welcome-illustration {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.robot-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  animation: bounce 2s infinite;
+}
+
+.tip-text {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  max-width: 400px;
+  margin: 0 auto;
+}
+.tip-text span {
+  display: inline-block;
+  margin: 0.2rem 0;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .tutor-mode {

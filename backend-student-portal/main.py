@@ -12,8 +12,8 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     CORS(app, resources={
-    r"/auth/*": {"origins": "http://localhost:5174", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]},
-    r"/api/*": {"origins": "http://localhost:5174", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}
+    r"/auth/*": {"origins": "http://localhost:5176", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]},
+    r"/api/*": {"origins": "http://localhost:5176", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}
 },  supports_credentials=True)  
     exposed_headers = ['Authorization', 'Content-Type']
     app.after_request(lambda response: (response.headers.add('Access-Control-Expose-Headers', ', '.join(exposed_headers)), response)[1])

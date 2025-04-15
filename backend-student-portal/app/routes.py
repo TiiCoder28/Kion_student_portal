@@ -8,6 +8,7 @@ from auth.models import Conversation, Message
 from app.database import db
 import re
 from typing import List, Dict, Optional
+from auth.models import User
 
 load_dotenv()
 
@@ -52,7 +53,10 @@ math_agent = Agent(
     name="Math Helper (CAPS-Aligned)",
     instructions=(
         "You're a friendly and patient math tutor who helps South African students from primary school to university.\n"
-        "Greet the student using their name if it's available (e.g., 'Hi [name]! 😊').\n"
+       "ALWAYS refer to the student by name at the beginning of your response if their name is available. "
+        "For example: 'Hi ${user.first_name}! ✨ Let's learn mathematics together!'\n"
+        "Or whenever you answer the student's question use their name\n"
+        "For example: 'Great question, ${user.first_name}!'\n"
         "\n"
         "📚 Topics you may assist with include: Basic arithmetic, Fractions, Algebra, Geometry, Trigonometry, Calculus, etc.\n"
         "\n"
@@ -73,7 +77,10 @@ english_agent = Agent(
     name="English Helper (CAPS-Aligned)",
     instructions=(
         "You're a warm and supportive English tutor for South African students, from primary school to university.\n"
-        "Greet learners using their name if available (e.g., 'Hi [name]! ✨').\n"
+        "ALWAYS refer to the student by name at the beginning of your response if their name is available. "
+        "For example: 'Hi ${user.first_name}! ✨ Let's learn about English together!'\n"
+        "Or whenever you answer the student's question use their name\n"
+        "For example: 'Great question, ${user.first_name}!'\n"
         "\n"
         "📚 Help with: Reading, Grammar, Essay Writing, Poetry, Literature, Creative Writing.\n"
         "🧠 Use age-appropriate language and keep things fun for younger learners.\n"
@@ -91,7 +98,10 @@ general_tutor_agent = Agent(
     name="All-Round Tutor",
     instructions=(
         "You're a kind and knowledgeable tutor for South African students of all ages.\n"
-        "Greet students by their name if it's available (e.g., 'Hi [name]! 👋').\n"
+        "ALWAYS refer to the student by name at the beginning of your response if their name is available. "
+        "For example: 'Hi ${user.first_name}! ✨ Ask me about any topic you're curious about!'\n"
+        "Or whenever you answer the student's question use their name\n"
+        "For example: 'Great question, ${user.first_name}!'\n"
         "\n"
         "📚 You help with a wide range of subjects, from Social Studies to Science and Technology.\n"
         "👧🏾 For younger kids: keep things short, simple, and fun. Use emojis and playful examples.\n"
@@ -109,7 +119,11 @@ study_tips_agent = Agent(
     name="Study Coach",
     instructions=(
         "You're a cheerful and supportive study coach helping South African students build strong study habits.\n"
-        "Greet the learner by name if it's available (e.g., 'Hey [name]! 💪 Let’s level up your study game!').\n"
+        "ALWAYS refer to the student by name at the beginning of your response if their name is available. "
+        "For example: 'Hi ${user.first_name}! ✨ Let's create a great study plan together!'\n"
+        "Or whenever you answer the student's question use their name\n"
+        "For example: 'Great question, ${user.first_name}!'\n"
+        "If you don't know the name, use a friendly greeting like 'Hi there!'\n"
         "\n"
         "📌 Your focus is on teaching study techniques and strategies like:\n"
         "- ⏰ Time management\n"
@@ -165,36 +179,57 @@ def get_conversation_context(conversation_id: int) -> List[Dict]:
                   .order_by(Message.created_at.asc()).all()
     return [{"role": msg.role, "content": msg.content} for msg in messages]
 
-def process_with_agents(user_message: str, conversation: Conversation) -> str:
+def process_with_agents(user_message: str, conversation: Conversation, user: User) -> str:
     messages = get_conversation_context(conversation.id)
+    
+    # Remove the original system message if it exists
+    messages = [msg for msg in messages if msg['role'] != 'system']
+    
+    # Add the user message
     messages.append({"role": "user", "content": user_message})
     
     try:
         # Determine which agent to use
         if conversation.mode == "tutor":
             if conversation.sub_mode == "math":
-                # Get initial response from math tutor
-                tutor_response = math_agent.generate_response(messages)
-                
-                # Verify only the math expressions without changing the context
-                verification_prompt = (
-                    "Please verify and correct ONLY the mathematical expressions in the following text. "
-                    "Do not change any other part of the response. "
-                    "If all math is correct, return the exact same text. "
-                    "If the math formula is incorrect, don't return a response, just correct the formula and return the bot's response"
-                    "Here's the text to verify:\n\n" + tutor_response
-                )
-                
-                verified_content = math_verification_agent.generate_response(
-                    [{"role": "user", "content": verification_prompt}]
-                )
-                content = verified_content
+                agent = math_agent
             elif conversation.sub_mode == "english":
-                content = english_agent.generate_response(messages)
+                agent = english_agent
             else:
-                content = general_tutor_agent.generate_response(messages)
+                agent = general_tutor_agent
         else:  # study_tips
-            content = study_tips_agent.generate_response(messages)
+            agent = study_tips_agent
+        
+      
+        first_name = user.first_name if user and user.first_name else None
+        
+        system_message = {
+            "role": "system",
+            "content": f"Current user's name: {first_name}\n\n{agent.instructions}"
+        }
+
+
+        # Insert the system message at the beginning
+        messages.insert(0, system_message)
+        
+        # Generate response with the personalized context Skip the system message as it's already in the agent
+        content = agent.generate_response(messages[1:])  
+        
+        # For math, verify the response
+        if conversation.mode == "tutor" and conversation.sub_mode == "math":
+            verification_prompt = (
+                "Please verify and correct ONLY the mathematical expressions in the following text. "
+                "Do not change any other part of the response. "
+                "If all math is correct, return the exact same text. "
+                "If there are errors, correct them using LaTeX formatting. "
+                "Do not add any explanations or additional content.\n\n"
+                "Here's the text to verify:\n\n" + content
+            )
+            
+            verified_content = math_verification_agent.generate_response(
+                [{"role": "user", "content": verification_prompt}]
+            )
+            content = verified_content
         
         # Final formatting
         if conversation.mode == "tutor" and conversation.sub_mode == "math":
@@ -353,6 +388,14 @@ def chat(conversation_id):
     data = request.json
     user_message = data.get('message', '').strip()
     
+    # Get user details from the database
+    user = db.session.get(User, user_id)  # Using get() which is preferred in SQLAlchemy 2.0+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    print(f"User object type: {type(user)}")
+    print(f"User first_name: {getattr(user, 'first_name', 'NOT FOUND')}")
+    
     conversation = Conversation.query.filter_by(
         id=conversation_id, 
         user_id=user_id
@@ -362,7 +405,7 @@ def chat(conversation_id):
         return jsonify({"error": "No message provided"}), 400
     
     try:
-        # Save user message (store raw markdown)
+        # Save user message
         user_msg = Message(
             conversation_id=conversation_id,
             content=user_message,
@@ -371,13 +414,13 @@ def chat(conversation_id):
         )
         db.session.add(user_msg)
         
-        # Process with agent pipeline
-        ai_response = process_with_agents(user_message, conversation)
+        # Process with agent pipeline - pass user object
+        ai_response = process_with_agents(user_message, conversation, user)
         
-        # Save AI response (store raw markdown)
+        # Save AI response
         ai_msg = Message(
             conversation_id=conversation_id,
-            content=ai_response,  # This contains the raw markdown
+            content=ai_response,
             role="assistant",
             created_at=datetime.utcnow()
         )
@@ -385,12 +428,12 @@ def chat(conversation_id):
         conversation.updated_at = datetime.utcnow()
         db.session.commit()
         
-        # Return both raw and formatted response
         return jsonify({
-            "response": ai_response,  # raw markdown
-            "formatted_response": format_response(ai_response),  # HTML formatted
+            "response": ai_response,
+            "formatted_response": format_response(ai_response),
             "conversation_id": conversation_id
         })
+        
         
     except Exception as e:
         db.session.rollback()
