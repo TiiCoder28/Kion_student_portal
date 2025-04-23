@@ -10,12 +10,6 @@
     <div class="sidebar" :class="{ 'sidebar-open': sidebarOpen, 'sidebar-closed': !sidebarOpen }">
       <img src="../assets/images/kion-robot.png" alt="Kion Logo" class="logo" />
       <div class="user-info">
-        <div class="user-avatar" @click="toggleUserMenu">
-          <div class="avatar-initials">{{ userInitials }}</div>
-          <div v-if="showUserMenu" class="user-menu">
-            <button @click="logout">Logout</button>
-          </div>
-        </div>
         <h3 class="username">Welcome {{ user.firstName }} 👋!</h3>
       </div>
 
@@ -27,6 +21,11 @@
       <div class="chat-history">
         <h3>Chat History</h3>
         
+        <!-- No chats message -->
+        <div v-if="todaysConversations.length === 0 && previousConversations.length === 0" class="no-chats-message">
+          No previous chats
+        </div>
+
         <!-- Today's Chats -->
         <div v-if="todaysConversations.length > 0" class="history-section">
           <h4 class="history-section-title">Today</h4>
@@ -78,12 +77,20 @@
       <div v-else class="chat-container">
 
         <h2 class="chat-title">
-          {{ activeConversationId ? conversations.find(c => c.id === activeConversationId)?.title : 'Select a conversation' }}
+          <div class="user-info">
+          <div class="header-avatar" @click="toggleUserMenu">
+            <div class="avatar-initials">{{ userInitials }}</div>
+            <div v-if="showUserMenu" class="user-menu">
+              <button @click="handleLogout">Logout</button>
+            </div>
+          </div>
+          </div>
+          {{ activeConversationId ? conversations.find(c => c.id === activeConversationId)?.title : 'Create a conversation' }}
         </h2>
         
         <div v-if="showWelcomeMessage" class="welcome-message">
           <h3>Welcome, {{ user.firstName }}! 👋. My name is Thuto</h3>
-          <p>Get started by choosing a conversation from the sidebar or typing your first message below.</p>
+          <p>Get started by choosing a conversation from the sidebar or starting a new chat with one of our tutors</p>
           <div class="welcome-illustration">
             <div class="robot-icon">🤖</div>
             <p class="tip-text">
@@ -92,6 +99,13 @@
                 "{{ tip }}"<br v-if="index < getModeSpecificTips().length - 1">
               </span>
             </p>
+            <button 
+              v-if="!activeConversationId" 
+              class="start-chat-btn"
+              @click="showModeDialog = true"
+            >
+              Start Chat
+            </button>
           </div>
         </div>
         <div class="chat-messages">
@@ -180,6 +194,18 @@
             <span class="sub-mode-icon">📖</span>
             <span class="sub-mode-text">English</span>
           </button>
+          <button @click="createNewConversation('tutor', 'history')" class="sub-mode-btn history-tutor">
+            <span class="sub-mode-icon">🏛️</span>
+            <span class="sub-mode-text">History</span>
+          </button>
+          <button @click="createNewConversation('tutor', 'geography')" class="sub-mode-btn geography-tutor">
+            <span class="sub-mode-icon">🗺️</span>
+            <span class="sub-mode-text">Geography</span>
+          </button>
+          <button @click="createNewConversation('tutor', 'physical_science')" class="sub-mode-btn science-tutor">
+            <span class="sub-mode-icon">⚛️</span>
+            <span class="sub-mode-text">Physical Science</span>
+          </button>
           <button @click="createNewConversation('tutor', 'general')" class="sub-mode-btn general-tutor">
             <span class="sub-mode-icon">🌟</span>
             <span class="sub-mode-text">General Tutor</span>
@@ -225,6 +251,7 @@ const messages = reactive([]);
 const conversations = reactive([]);
 const isTyping = ref(false);
 const visiblePreviousChats = ref(5);
+const showUserMenu = ref(false);
 
 
 
@@ -298,6 +325,24 @@ const getModeSpecificTips = () => {
           "Help me understand World War II causes",
           "What are Newton's laws of motion?"
         ];
+      case 'history':
+        return [
+          "Tell me about the French Revolution",
+          "What were the causes of the Cold War?",
+          "Explain the significance of the Magna Carta"
+        ];
+      case 'geography':
+        return [
+          "What are the major rivers in Africa?",
+          "Explain the concept of plate tectonics",
+          "Describe the climate zones of the world"
+        ];
+      case 'physical_science':
+        return [
+          "Explain the laws of thermodynamics",
+          "What is the difference between speed and velocity?",
+          "Describe the structure of an atom"
+        ];
       default:
         return [
           "Help me with algebra basics",
@@ -361,6 +406,9 @@ const getConversationIcon = (conversation) => {
   if (conversation.mode === 'study_tips') return '📚';
   if (conversation.sub_mode === 'math') return '🧮';
   if (conversation.sub_mode === 'english') return '📖';
+  if (conversation.sub_mode === 'history') return '🏛️';
+  if (conversation.sub_mode === 'geography') return '🗺️';
+  if (conversation.sub_mode === 'physical_science') return '⚛️';
   return '🌟';
 };
 
@@ -415,6 +463,29 @@ const renderMathInMessage = async (content) => {
   return processed;
 };
 
+const checkScrollPosition = () => {
+  const chatContainer = document.querySelector('.chat-messages');
+  if (chatContainer) {
+    // Calculate if user has scrolled up (with 100px threshold)
+    const threshold = 100;
+    const fromBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+    console.log(`Distance from bottom: ${fromBottom}px`);
+    showScrollButton.value = fromBottom > threshold;
+    console.log(`Show scroll button: ${showScrollButton.value}`);
+  }
+};
+
+const scrollToBottom = async (behavior = 'smooth') => {
+  await nextTick();
+  const chatContainer = document.querySelector('.chat-messages');
+  if (chatContainer) {
+    chatContainer.scrollTo({
+      top: chatContainer.scrollHeight,
+      behavior: behavior
+    });
+    showScrollButton.value = false;
+  }
+};
 
 // Fetch user data
 const fetchUserData = async () => {
@@ -428,8 +499,6 @@ const fetchUserData = async () => {
         'Content-Type': 'application/json'
       }
     });
-    
-    console.log("User response:", response.data); // Check response structure
     
     if (response.data) {
       user.firstName = response.data.first_name;
@@ -573,6 +642,9 @@ const createNewConversation = async (mode, subMode = null) => {
       welcomeMessage = {
         math: `Hi ${user.firstName}! 👋 I'm your Mathematics tutor. What concepts would you like help with today?`,
         english: `Hello ${user.firstName}! 📚 I'm your English tutor. How can I assist you today?`,
+        history: `Greetings ${user.firstName}! 🏛️ I'm your History tutor. What historical events are you curious about?`,
+        geography: `Hi ${user.firstName}! 🗺️ I'm your Geography tutor. What geographical topics would you like to explore?`,
+        physical_science: `Hello ${user.firstName}! ⚛️ I'm your Physical Science tutor. What scientific concepts would you like to learn about?`,
         general: `Hi there ${user.firstName}! 🌟 I'm your general tutor. What would you like to learn about?`
       }[subMode];
     } else {
@@ -670,18 +742,27 @@ const sendMessage = async () => {
 };
 
 
-// Helper function to scroll to bottom of chat
-const scrollToBottom = async (behavior = 'smooth') => {
-  await nextTick();
-  const chatContainer = document.querySelector('.chat-messages');
-  if (chatContainer) {
-    chatContainer.scrollTo({
-      top: chatContainer.scrollHeight,
-      behavior: behavior
-    });
+const logout = async () => {
+  try {
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      await axios.post(`${API_BASE_URL}/auth/logout`, {}, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
+      });
+    }
+    localStorage.removeItem("access_token");
+    router.push("/login");
+  } catch (error) {
+    console.error("Logout failed:", error);
+    localStorage.removeItem("access_token");
+    router.push("/login");
   }
-  showScrollButton.value = false;
 };
+  
 
 // Initialize component
 onMounted(async () => {
@@ -693,35 +774,17 @@ onMounted(async () => {
   }
 
   await fetchUserData();
-
   await fetchConversations();
 
-
   nextTick(() => {
-    if(messageInput.value) {
-      messageInput.value.focus();
+    const chatContainer = document.querySelector('.chat-messages');
+    if (chatContainer) {
+      chatContainer.addEventListener('scroll', checkScrollPosition);
     }
+    scrollToBottom('auto');
     
   });
 
-
-  const logout = async () => {
-  try {
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      await axios.post(`${API_BASE_URL}/auth/logout`, {}, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-    }
-    localStorage.removeItem("access_token");
-    router.push("/login");
-  } catch (error) {
-    console.error("Logout failed:", error);
-  }
-};
-  
   // Close sidebar if screen is larger than 768px
   const handleResize = () => {
     if (window.innerWidth > 768) {
@@ -730,12 +793,19 @@ onMounted(async () => {
   };
   
   window.addEventListener('resize', handleResize);
-  await scrollToBottom('auto');
+
+  checkScrollPosition();
 });
 
-const showUserMenu = ref(false);
-const toggleUserMenu = () => {
+
+const toggleUserMenu = (e) => {
+  e.stopPropagation();
   showUserMenu.value = !showUserMenu.value;
+};
+
+const handleLogout = (e) => {
+  e.stopPropagation();
+  logout();
 };
 
 // Close user menu when clicking outside
@@ -747,6 +817,10 @@ const handleClickOutside = (event) => {
 };
 
 onBeforeUnmount(() => {
+  const chatContainer = document.querySelector('.chat-messages');
+  if (chatContainer) {
+    chatContainer.removeEventListener('scroll', checkScrollPosition);
+  }
   document.removeEventListener('click', handleClickOutside);
 });
 </script>
@@ -780,6 +854,7 @@ onBeforeUnmount(() => {
 
 .user-info {
   display: flex;
+  padding: 10px;
   align-items: center;
   margin-bottom: 30px;
 }
@@ -922,6 +997,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   max-height: calc(100vh - 180px);
   scroll-behavior: smooth;
+  position: relative;
 }
 
 .message-container {
@@ -1124,12 +1200,32 @@ onBeforeUnmount(() => {
 }
 
 .chat-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
   color: white;
   text-align: center;
   padding: 1rem 0;
   margin-bottom: 1rem;
   font-size: 1.5rem;
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.header-avatar {
+  position: absolute;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #24b9f9;
+  display: flex;
+  padding: 10px;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
 }
 
 .welcome-message {
@@ -1154,6 +1250,23 @@ onBeforeUnmount(() => {
 .welcome-illustration {
   margin-top: 2rem;
   text-align: center;
+}
+
+.start-chat-btn {
+  background-color: #24b9f9;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  margin-top: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.start-chat-btn:hover {
+  background-color: #1da7e6;
+  transform: translateY(-2px);
 }
 
 .robot-icon {
@@ -1226,6 +1339,20 @@ onBeforeUnmount(() => {
   color: white;
 }
 
+.history-tutor {
+  background-color: #8e44ad;
+  color: white;
+}
+
+.geography-tutor {
+  background-color: #27ae60;
+  color: white;
+}
+
+.science-tutor {
+  background-color: #3498db;
+  color: white;
+}
 .sub-mode-icon {
   font-size: 1.2em;
 }
@@ -1339,6 +1466,14 @@ onBeforeUnmount(() => {
   background-color: #f0f0f0;
 }
 
+.no-chats-message {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.3rem;
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+
 .history-section {
   display: flex;
   flex-direction: column;
@@ -1372,7 +1507,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 1000;
   transition: all 0.2s;
   opacity: 0.9;
 }
@@ -1381,6 +1516,11 @@ onBeforeUnmount(() => {
   background-color: #1da7e6;
   transform: scale(1.1);
   opacity: 1;
+}
+
+.scroll-to-bottom svg {
+  width: 20px;
+  height: 20px;
 }
 
 .scroll-to-bottom svg {
@@ -1465,9 +1605,10 @@ onBeforeUnmount(() => {
 .user-menu {
   position: absolute;
   top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 0;
+  transform: none;
   background-color: white;
+  padding: 10px;
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   z-index: 20;

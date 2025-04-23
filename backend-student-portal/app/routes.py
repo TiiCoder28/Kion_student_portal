@@ -24,7 +24,7 @@ class Agent:
         self,
         name: str,
         instructions: str,
-        model: str = "gpt-4",
+        model: str = "gpt-4o-mini",
         tools: Optional[List] = None,
         handoffs: Optional[List['Agent']] = None
     ):
@@ -99,7 +99,7 @@ general_tutor_agent = Agent(
     instructions=(
         "You're a kind and knowledgeable tutor for South African students of all ages.\n"
         "ALWAYS refer to the student by name at the beginning of your response if their name is available. "
-        "For example: 'Hi ${user.first_name}! ✨ Ask me about any topic you're curious about!'\n"
+        "For example: 'Hi {user.first_name}! ✨ Ask me about any topic you're curious about!'\n"
         "Or whenever you answer the student's question use their name\n"
         "For example: 'Great question, ${user.first_name}!'\n"
         "\n"
@@ -112,6 +112,48 @@ general_tutor_agent = Agent(
         "🧠 Always check in if the student is understanding, and offer encouragement and support.\n"
         "\n"
         "If the question requires subject-specific expertise, kindly suggest they talk to a specialist agent (like the Math or English helper)."
+    )
+)
+
+history_agent = Agent(
+    name="History Helper (CAPS-Aligned)",
+    instructions=(
+        "You're an engaging history tutor for South African students.\n"
+        "ALWAYS refer to the student by name at the beginning of your response if available.\n"
+        "Example: 'Hi {user.first_name}! Let's explore history together!'\n\n"
+        "📚 Cover: Ancient civilizations, SA history, World Wars, Apartheid, Democracy\n"
+        "🌍 Connect historical events to modern contexts\n"
+        "📅 Use timelines and cause/effect explanations\n"
+        "🧭 Highlight diverse perspectives and primary sources\n"
+        "✨ Make history come alive with stories and relevance to students' lives"
+    )
+)
+
+geography_agent = Agent(
+    name="Geography Helper (CAPS-Aligned)",
+    instructions=(
+        "You're an enthusiastic geography tutor for South African students.\n"
+        "ALWAYS use the student's name if available.\n"
+        "Example: 'Hello {user.first_name}! Ready to explore our world?'\n\n"
+        "🗺️ Cover: Physical geography, Human geography, Map skills, SA regions\n"
+        "🌦️ Explain weather systems and climate change\n"
+        "🏙️ Discuss urbanization and settlement patterns\n"
+        "🌱 Teach about ecosystems and sustainability\n"
+        "📊 Use maps, diagrams and real-world examples"
+    )
+)
+
+physical_science_agent = Agent(
+    name="Physical Science Helper (CAPS-Aligned)",
+    instructions=(
+        "You're a patient physical science tutor for South African students.\n"
+        "ALWAYS use the student's name if available.\n"
+        "Example: 'Hi {user.first_name}! Let's discover physical science!'\n\n"
+        "⚛️ Cover: Physics, Chemistry, Scientific method, Experiments\n"
+        "🧪 Explain concepts with practical examples\n"
+        "🔬 Use proper scientific terminology\n"
+        "📐 Include calculations with LaTeX formatting\n"
+        "⚠️ Emphasize lab safety and real-world applications"
     )
 )
 
@@ -191,38 +233,34 @@ def process_with_agents(user_message: str, conversation: Conversation, user: Use
     try:
         # Determine which agent to use
         if conversation.mode == "tutor":
-            if conversation.sub_mode == "math":
-                agent = math_agent
-            elif conversation.sub_mode == "english":
-                agent = english_agent
-            else:
-                agent = general_tutor_agent
-        else:  # study_tips
+            agent_map = {
+                "math": math_agent,
+                "english": english_agent,
+                "general": general_tutor_agent,
+                "history": history_agent,
+                "geography": geography_agent,
+                "physical_science": physical_science_agent
+            }
+            agent = agent_map.get(conversation.sub_mode, general_tutor_agent)
+        else:
             agent = study_tips_agent
-        
-      
+            
         first_name = user.first_name if user and user.first_name else None
-        
         system_message = {
             "role": "system",
             "content": f"Current user's name: {first_name}\n\n{agent.instructions}"
         }
-
-
-        # Insert the system message at the beginning
+        
         messages.insert(0, system_message)
+        content = agent.generate_response(messages[1:])
         
-        # Generate response with the personalized context Skip the system message as it's already in the agent
-        content = agent.generate_response(messages[1:])  
-        
-        # For math, verify the response
-        if conversation.mode == "tutor" and conversation.sub_mode == "math":
+        # For math and science, verify the response
+        if conversation.mode == "tutor" and conversation.sub_mode in ["math", "physical_science"]:
             verification_prompt = (
-                "Please verify and correct ONLY the mathematical expressions in the following text. "
+                "Please verify and correct ONLY the mathematical/scientific expressions in the following text. "
                 "Do not change any other part of the response. "
-                "If all math is correct, return the exact same text. "
-                "If there are errors, correct them using LaTeX formatting. "
-                "Do not add any explanations or additional content.\n\n"
+                "If all is correct, return the exact same text. "
+                "If there are errors, correct them using LaTeX formatting.\n\n"
                 "Here's the text to verify:\n\n" + content
             )
             
@@ -230,9 +268,8 @@ def process_with_agents(user_message: str, conversation: Conversation, user: Use
                 [{"role": "user", "content": verification_prompt}]
             )
             content = verified_content
-        
-        # Final formatting
-        if conversation.mode == "tutor" and conversation.sub_mode == "math":
+
+        if conversation.mode == "tutor" and conversation.sub_mode == "math" or conversation.sub_mode == "physical_science":
             content = format_response(content)
 
         return content
@@ -294,7 +331,7 @@ def create_conversation():
     sub_mode = data.get('sub_mode')
     
     valid_modes = {
-        'tutor': ['math', 'english', 'general'],
+        'tutor': ['math', 'english', 'general', 'history', 'geography', 'physical_science'],
         'study_tips': []
     }
     
@@ -305,10 +342,15 @@ def create_conversation():
 
     try:
         # Create descriptive title
-        if mode == 'tutor':
-            title = f"Tutor - {sub_mode.capitalize()}"
-        else:
-            title = "Study Tips"
+        title_map = {
+            'math': "Mathematics Tutor",
+            'english': "English Tutor",
+            'general': "General Tutor",
+            'history': "History Tutor",
+            'geography': "Geography Tutor",
+            'physical_science': "Physical Science Tutor"
+        }
+        title = title_map.get(sub_mode, "Tutor Session") if mode == 'tutor' else "Study Tips"
         
         new_conversation = Conversation(
             user_id=user_id,
@@ -320,14 +362,16 @@ def create_conversation():
         db.session.flush()
         
         # Add system message based on mode
-        if mode == 'tutor':
-            system_content = {
-                'math': math_agent.instructions,
-                'english': english_agent.instructions,
-                'general': general_tutor_agent.instructions
-            }[sub_mode]
-        else:
-            system_content = study_tips_agent.instructions
+        agent_map = {
+            'math': math_agent,
+            'english': english_agent,
+            'general': general_tutor_agent,
+            'history': history_agent,
+            'geography': geography_agent,
+            'physical_science': physical_science_agent
+        }
+
+        system_content = agent_map.get(sub_mode, general_tutor_agent).instructions if mode == 'tutor' else study_tips_agent.instructions
             
         system_message = Message(
             conversation_id=new_conversation.id,

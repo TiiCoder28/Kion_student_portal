@@ -31,7 +31,7 @@ def signup():
     db.session.commit()
 
     # Generate a JWT token for the new user
-    access_token = create_access_token(identity=new_user.id)
+    access_token = create_access_token(identity=str(new_user.id))
     return jsonify({
         "message": "User created successfully",
         "access_token": access_token,
