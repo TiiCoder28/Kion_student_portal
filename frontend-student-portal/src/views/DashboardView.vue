@@ -81,11 +81,17 @@
           <div class="header-avatar" @click="toggleUserMenu">
             <div class="avatar-initials">{{ userInitials }}</div>
             <div v-if="showUserMenu" class="user-menu">
+              <button @click="navigateToArchived">Archived Chats</button>
               <button @click="handleLogout">Logout</button>
             </div>
           </div>
           </div>
           {{ activeConversationId ? conversations.find(c => c.id === activeConversationId)?.title : 'Create a conversation' }}
+          <div class="chat-header-actions" v-if="activeConversationId">
+          <button class="btn btn-primary" @click="confirmClearChat">
+            Clear Chat
+          </button>
+        </div>
         </h2>
         
         <div v-if="showWelcomeMessage" class="welcome-message">
@@ -236,6 +242,9 @@ const sidebarOpen = ref(false);
 const showScrollButton = ref(false);
 const selectedMode = ref(null);
 
+const navigateToArchived = () => {
+  router.push('/archived-chats');
+};
 
 // User data
 const user = reactive({
@@ -270,6 +279,56 @@ const loadMoreChats = () => {
 const showWelcomeMessage = computed(() => {
   return messages.length === 0 || !activeConversationId.value;
 });
+
+const confirmClearChat = () => {
+  if (confirm("Are you sure you want to clear this chat? The conversation will be archived and a new one will be created.")) {
+    clearAndRestartChat();
+  }
+};
+
+const clearAndRestartChat = async () => {
+  try {
+    const token = localStorage.getItem("access_token");
+    const currentConv = conversations.find(c => c.id === activeConversationId.value);
+    
+    if (!currentConv) return;
+    
+    // Archive the current conversation
+    await axios.post(
+      `${API_BASE_URL}/api/conversations/${activeConversationId.value}/archive`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    // Create a new conversation with same mode/sub_mode
+    const payload = {
+      mode: currentConv.mode
+    };
+    
+    if (currentConv.sub_mode) {
+      payload.sub_mode = currentConv.sub_mode;
+    }
+    
+    const response = await axios.post(
+      `${API_BASE_URL}/api/conversations`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    // Update local state
+    const index = conversations.findIndex(c => c.id === activeConversationId.value);
+    if (index > -1) {
+      conversations[index].is_active = false;
+    }
+    
+    conversations.unshift(response.data);
+    await loadConversation(response.data.id);
+    
+  } catch (error) {
+    console.error("Error clearing chat:", error);
+  }
+};
+
 
 const handleKeyDown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -843,7 +902,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   transition: transform 0.3s ease;
-  z-index: 10;
+  z-index: 100;
 }
 
 .logo {
@@ -1210,6 +1269,45 @@ onBeforeUnmount(() => {
   margin-bottom: 1rem;
   font-size: 1.5rem;
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-header-actions {
+  position: absolute;
+  left: 20px;
+  top: 20px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-primary {
+  background-color: #24b9f9;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #1da7e6;
+}
+
+
+.clear-chat-btn {
+  background: #f8f9fa;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  padding: 5px 15px;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-chat-btn:hover {
+  background: #e9ecef;
 }
 
 .header-avatar {
@@ -1609,16 +1707,17 @@ onBeforeUnmount(() => {
   transform: none;
   background-color: white;
   padding: 10px;
-  border-radius: 4px;
+  border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  z-index: 20;
-  min-width: 120px;
+  z-index: 100;
+  min-width: 180px;
   overflow: hidden;
 }
 
 .user-menu button {
+  display: block;
   width: 100%;
-  padding: 8px 16px;
+  padding: 10px 15px;
   border: none;
   background: none;
   text-align: left;
@@ -1632,31 +1731,36 @@ onBeforeUnmount(() => {
 
 /* Responsive styles */
 @media (max-width: 768px) {
-
   .sidebar {
-    width: 100%;
-    height: auto;
-    max-height: 60vh;
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 100;
+    transform: translateX(-100%);
   }
-
-  .chat-container {
-    padding: 10px;
-    height: calc(100vh - 120px); /* Adjust for mobile */
-  }
-  
   
   .sidebar.sidebar-open {
     transform: translateX(0);
   }
   
   .main-content {
-    margin-top: 60px; 
-    height: calc(100vh - 60px);
+    margin-left: 0;
+    width: 100%;
   }
+  
+  .sidebar-toggle {
+    display: flex;
+  }
+
+/* Ensure chat container fits on mobile */
+.chat-container {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
   
   
   .message {
