@@ -1,13 +1,18 @@
 from app.database import db  
 from datetime import datetime
 from flask_bcrypt import generate_password_hash, check_password_hash
+import phonenumbers
+from phonenumbers.phonenumberutil import NumberParseException
+
 
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     first_name = db.Column(db.String(50), nullable=False)
     last_name = db.Column(db.String(50), nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=True)  # Now nullable
+    phone_number = db.Column(db.String(20), unique=True, nullable=True)  # New field
+    country_code = db.Column(db.String(5), nullable=True)  # New field
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.current_timestamp())
     
@@ -16,6 +21,14 @@ class User(db.Model):
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    @staticmethod
+    def validate_phone_number(phone_number, country_code):
+        try:
+            parsed_number = phonenumbers.parse(phone_number, country_code)
+            return phonenumbers.is_valid_number(parsed_number)
+        except NumberParseException:
+            return False
 
 class Conversation(db.Model):
     __tablename__ = 'conversations'
@@ -24,12 +37,14 @@ class Conversation(db.Model):
     title = db.Column(db.String(100), nullable=False, default="New Conversation")
     mode = db.Column(db.String(20))  # 'tutor' or 'study_tips'
     sub_mode = db.Column(db.String(20))  # 'math', 'english', 'general' (nullable)
+    is_active = db.Column(db.Boolean, default=True)  # New field for active/archived
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # NEW
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     user = db.relationship('User', backref=db.backref('conversations', lazy=True))
     messages = db.relationship('Message', backref='conversation', lazy=True, cascade='all, delete-orphan')
 
+    
 class Message(db.Model):
     __tablename__ = 'messages'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)

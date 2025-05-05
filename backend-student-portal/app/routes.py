@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from openai import OpenAI
 import os
@@ -9,6 +9,7 @@ from app.database import db
 import re
 from typing import List, Dict, Optional
 from auth.models import User
+import json
 
 load_dotenv()
 
@@ -322,7 +323,7 @@ def get_conversations():
         return jsonify({"error": "Failed to fetch conversations"}), 500
     
 
-@chat_bp.route("/conversations", methods=["POST"], endpoint="create_conversation")
+@chat_bp.route("/conversations", methods=["POST"])
 @jwt_required()
 def create_conversation():
     user_id = get_jwt_identity()
@@ -341,6 +342,20 @@ def create_conversation():
         return jsonify({"error": "Invalid tutor type"}), 400
 
     try:
+        # Check for existing active conversation in this mode/sub_mode
+        existing = Conversation.query.filter_by(
+            user_id=user_id,
+            mode=mode,
+            sub_mode=sub_mode if mode == 'tutor' else None,
+            is_active=True
+        ).first()
+        
+        if existing:
+            return jsonify({
+                "error": "You already have an active conversation in this mode",
+                "existing_conversation_id": existing.id
+            }), 400
+
         # Create descriptive title
         title_map = {
             'math': "Mathematics Tutor",
@@ -356,7 +371,8 @@ def create_conversation():
             user_id=user_id,
             title=title,
             mode=mode,
-            sub_mode=sub_mode if mode == 'tutor' else None
+            sub_mode=sub_mode if mode == 'tutor' else None,
+            is_active=True
         )
         db.session.add(new_conversation)
         db.session.flush()
@@ -392,7 +408,6 @@ def create_conversation():
         db.session.rollback()
         print(f"Error creating conversation: {e}")
         return jsonify({"error": "Failed to create conversation"}), 500
-
     
 
 @chat_bp.route("/conversations/<int:conversation_id>", methods=["GET"], endpoint="get_conversation")
@@ -483,3 +498,169 @@ def chat(conversation_id):
         db.session.rollback()
         print(f"Error in chat endpoint: {e}")
         return jsonify({"error": str(e)}), 500
+    
+@chat_bp.route("/conversations/<int:conversation_id>", methods=["DELETE"])
+@jwt_required()
+def delete_conversation(conversation_id):
+    user_id = get_jwt_identity()
+    try:
+        conversation = Conversation.query.filter_by(
+            id=conversation_id,
+            user_id=user_id
+        ).first_or_404()
+        
+        # Delete all messages first to maintain referential integrity
+        Message.query.filter_by(conversation_id=conversation_id).delete()
+        
+        # Then delete the conversation
+        db.session.delete(conversation)
+        db.session.commit()
+        
+        return jsonify({"message": "Conversation deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting conversation: {e}")
+        return jsonify({"error": "Failed to delete conversation"}), 500
+    
+    
+@chat_bp.route("/conversations/<int:conversation_id>/archive", methods=["POST"])
+@jwt_required()
+def archive_conversation(conversation_id):
+    user_id = get_jwt_identity()
+    try:
+        conversation = Conversation.query.filter_by(
+            id=conversation_id,
+            user_id=user_id
+        ).first_or_404()
+        
+        conversation.is_active = False
+        db.session.commit()
+        
+        return jsonify({"message": "Conversation archived successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error archiving conversation: {e}")
+        return jsonify({"error": "Failed to archive conversation"}), 500
+
+
+@chat_bp.route("/conversations/archived", methods=["GET"])
+@jwt_required()
+def get_archived_conversations():
+    user_id = get_jwt_identity()
+    try:
+        conversations = db.session.query(
+            Conversation,
+            db.func.max(Message.created_at).label('last_activity')
+        ).join(Message)\
+         .filter(
+             Conversation.user_id == user_id,
+             Conversation.is_active == False
+         )\
+         .group_by(Conversation.id)\
+         .order_by(db.desc('last_activity'))\
+         .limit(20)\
+         .all()
+        
+        return jsonify([{
+            "id": conv.id,
+            "title": conv.title,
+            "mode": conv.mode,
+            "sub_mode": conv.sub_mode,
+            "created_at": conv.created_at.isoformat(),
+            "last_activity": last_activity.isoformat() if last_activity else conv.created_at.isoformat()
+        } for conv, last_activity in conversations])
+    except Exception as e:
+        print(f"Error fetching archived conversations: {e}")
+        return jsonify({"error": "Failed to fetch archived conversations"}), 500
+    
+
+@chat_bp.route("/conversations/<int:conversation_id>/stream", methods=["POST"])
+@jwt_required()
+def stream_chat(conversation_id):
+    user_id = get_jwt_identity()
+    data = request.json
+    user_message = data.get('message', '').strip()
+    
+    conversation = Conversation.query.filter_by(
+        id=conversation_id, 
+        user_id=user_id
+    ).first_or_404()
+    
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    if not user_message:
+        return jsonify({"error": "No message provided"}), 400
+    
+    # Save user message
+    user_msg = Message(
+        conversation_id=conversation_id,
+        content=user_message,
+        role="user",
+        created_at=datetime.utcnow()
+    )
+    db.session.add(user_msg)
+    db.session.commit()
+    
+    def generate():
+        try:
+            messages = get_conversation_context(conversation.id)
+            messages = [msg for msg in messages if msg['role'] != 'system']
+            messages.append({"role": "user", "content": user_message})
+            
+            # Determine which agent to use
+            if conversation.mode == "tutor":
+                agent_map = {
+                    "math": math_agent,
+                    "english": english_agent,
+                    "general": general_tutor_agent,
+                    "history": history_agent,
+                    "geography": geography_agent,
+                    "physical_science": physical_science_agent
+                }
+                agent = agent_map.get(conversation.sub_mode, general_tutor_agent)
+            else:
+                agent = study_tips_agent
+                
+            first_name = user.first_name if user and user.first_name else None
+            system_message = {
+                "role": "system",
+                "content": f"Current user's name: {first_name}\n\n{agent.instructions}"
+            }
+            
+            messages.insert(0, system_message)
+            
+            # Create streaming response
+            stream = client.chat.completions.create(
+                model=agent.model,
+                messages=messages[1:],
+                temperature=0.3,
+                stream=True
+            )
+            
+            full_response = ""
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_response += content
+                    yield f"data: {json.dumps({'content': content})}\n\n"
+            
+            # Save the full response
+            ai_msg = Message(
+                conversation_id=conversation_id,
+                content=full_response,
+                role="assistant",
+                created_at=datetime.utcnow()
+            )
+            db.session.add(ai_msg)
+            conversation.updated_at = datetime.utcnow()
+            db.session.commit()
+            
+            yield "data: [DONE]\n\n"
+            
+        except Exception as e:
+            print(f"Error in streaming chat: {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(generate(), mimetype="text/event-stream")
