@@ -225,12 +225,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick, computed, onBeforeUnmount } from "vue";
+import { ref, reactive, onMounted, nextTick, computed, onBeforeUnmount, watch } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import { marked } from 'marked';
-import katex from "katex";
-import "katex/dist/katex.min.css";
+import 'mathjax/es5/tex-mml-chtml';
 
 
 const API_BASE_URL = "http://localhost:5000";
@@ -471,56 +470,92 @@ const getConversationIcon = (conversation) => {
   return '🌟';
 };
 
+const configureMathJax = () => {
+  window.MathJax = {
+    tex: {
+      inlineMath: [['$', '$'], ['\\(', '\\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']],
+      processEscapes: true,
+      packages: {'[+]': ['ams', 'physics', 'siunitx']}, // Added physics and siunitx
+      macros: {
+        degC: '^{\\circ}\\mathrm{C}', // Shortcut for degrees Celsius
+        kelvin: '\\mathrm{K}',
+        celsius: '^{\\circ}\\mathrm{C}'
+      }
+    },
+    loader: {load: ['[tex]/physics', '[tex]/siunitx']}, // Load additional packages
+    startup: {
+      typeset: false
+    }
+  };
+};
 
 // Toggle sidebar on mobile
 const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value;
 };
 
+const loadMathJax = () => {
+  return new Promise((resolve) => {
+    if (window.MathJax) {
+      resolve(); // Already loaded
+      return;
+    }
+    
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
+    script.async = true;
+    script.onload = resolve;
+    document.head.appendChild(script);
+  });
+};
+
 const formatMessageContent = async (content) => {
   try {
     // First process with marked for markdown
     let processed = marked(content || '');
-    
-    // Then process math expressions if this is a math conversation
-    processed = await renderMathInMessage(processed);
-    
+
+    if (window.MathJax) {
+      await window.MathJax.typesetPromise();
+    }
+
     return processed;
   } catch (e) {
     console.error("Formatting error:", e);
-    return content; // Fallback to original content
+    return content; 
   }
 };
 
-const renderMathInMessage = async (content) => {
-  // Process display math ($$...$$)
-  let processed = content.replace(/\$\$(.*?)\$\$/gs, (_, formula) => {
-    try {
-      return katex.renderToString(formula, {
-        throwOnError: false,
-        displayMode: true
-      });
-    } catch (err) {
-      console.error("Error rendering math:", err);
-      return `<div class="math-error">$${formula}$</div>`;
-    }
-  });
+
+// const renderMathInMessage = async (content) => {
+//   // Process display math ($$...$$)
+//   let processed = content.replace(/\$\$(.*?)\$\$/gs, (_, formula) => {
+//     try {
+//       return katex.renderToString(formula, {
+//         throwOnError: false,
+//         displayMode: true
+//       });
+//     } catch (err) {
+//       console.error("Error rendering math:", err);
+//       return `<div class="math-error">$${formula}$</div>`;
+//     }
+//   });
   
-  // Process inline math ($...$)
-  processed = processed.replace(/\$(.*?)\$/g, (_, formula) => {
-    try {
-      return katex.renderToString(formula, {
-        throwOnError: false,
-        displayMode: false
-      });
-    } catch (err) {
-      console.error("Error rendering inline math:", err);
-      return `<span class="math-error">$${formula}$</span>`;
-    }
-  });
+//   // Process inline math ($...$)
+//   processed = processed.replace(/\$(.*?)\$/g, (_, formula) => {
+//     try {
+//       return katex.renderToString(formula, {
+//         throwOnError: false,
+//         displayMode: false
+//       });
+//     } catch (err) {
+//       console.error("Error rendering inline math:", err);
+//       return `<span class="math-error">$${formula}$</span>`;
+//     }
+//   });
   
-  return processed;
-};
+//   return processed;
+// };
 
 const checkScrollPosition = () => {
   const chatContainer = document.querySelector('.chat-messages');
@@ -823,8 +858,23 @@ const logout = async () => {
 };
   
 
+watch(() => messages, async (newVal) => {
+  await nextTick();
+  if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
+    try {
+      console.log('Typesetting math...');
+      await window.MathJax.typesetPromise();
+      console.log('Math typeset complete');
+    } catch (e) {
+      console.error('MathJax error:', e);
+    }
+  }
+}, { deep: true, immediate: true });
+
 // Initialize component
 onMounted(async () => {
+
+  await loadMathJax();
 
   const token = localStorage.getItem("access_token");
   if (!token) {
@@ -842,9 +892,12 @@ onMounted(async () => {
     }
     scrollToBottom('auto');
     
+    if (window.MathJax) {
+      window.MathJax.typesetPromise();
+    }
   });
 
-  // Close sidebar if screen is larger than 768px
+
   const handleResize = () => {
     if (window.innerWidth > 768) {
       sidebarOpen.value = false;
@@ -867,7 +920,7 @@ const handleLogout = (e) => {
   logout();
 };
 
-// Close user menu when clicking outside
+
 const handleClickOutside = (event) => {
   const userAvatar = document.querySelector('.user-avatar');
   if (userAvatar && !userAvatar.contains(event.target)) {
@@ -1729,6 +1782,33 @@ onBeforeUnmount(() => {
   background-color: #f5f5f5;
 }
 
+.MathJax {
+  font-size: 1.1em;
+  color: inherit !important;
+}
+
+.ai-message .MathJax {
+  color: #333 !important;
+}
+
+.user-message .MathJax {
+  color: white !important;
+}
+
+.MathJax_Display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
+
+.math-error {
+  color: #e74c3c;
+  background-color: #fde8e8;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
 /* Responsive styles */
 @media (max-width: 768px) {
   .sidebar {
@@ -1748,7 +1828,7 @@ onBeforeUnmount(() => {
     display: flex;
   }
 
-/* Ensure chat container fits on mobile */
+
 .chat-container {
   height: 100%;
   overflow: hidden;
