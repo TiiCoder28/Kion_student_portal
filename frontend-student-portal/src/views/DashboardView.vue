@@ -299,15 +299,17 @@ const clearAndRestartChat = async () => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
     
-    // Create a new conversation with same mode/sub_mode
+    // Create payload for new conversation
     const payload = {
       mode: currentConv.mode
     };
     
-    if (currentConv.sub_mode) {
+    // Only add sub_mode if it exists (for tutor mode)
+    if (currentConv.mode === 'tutor' && currentConv.sub_mode) {
       payload.sub_mode = currentConv.sub_mode;
     }
     
+    // Create new conversation
     const response = await axios.post(
       `${API_BASE_URL}/api/conversations`,
       payload,
@@ -325,9 +327,10 @@ const clearAndRestartChat = async () => {
     
   } catch (error) {
     console.error("Error clearing chat:", error);
+    // Show error to user
+    alert("Failed to clear chat. Please try again.");
   }
 };
-
 
 const handleKeyDown = (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
