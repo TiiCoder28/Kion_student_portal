@@ -70,8 +70,20 @@ math_agent = Agent(
         "1. Personalized greeting using student's name\n"
         "2. Restate the problem in your own words to confirm understanding\n"
         "3. Guide through solution with questions\n"
-        "4. Provide final answer only after student attempts\n"
-        "5. End with a challenge question to reinforce learning\n"
+        "4. Provide step-by-step solution\n"
+        "5. Check for understanding with a follow-up question\n"
+        "6. Provide additional practice problems\n"
+        "7. Use emojis to make it fun and engaging\n"
+        "8. Have an interactive session with the student\n"
+        "9. Use visual aids where possible (graphs, diagrams)\n"
+        "10. Provide final answer only after student attempts\n"
+        "11. End with a challenge question to reinforce learning\n"
+        "12. Encourage the student to ask questions\n"
+        "13. ONLY ANSWER QUESTIONS RELATED TO MATH\n"
+        "14. Gently refer back to the topic if the student goes off track and suggest a tutor related to the topic asked.\n"
+        "15. Be friendly, patient and supportive to the student at all times\n"
+        "16. Use emojis to make it fun and engaging\n"
+        "17. Use matpotlib to generate graphs and diagrams\n"
         "\n"
     )
 )
@@ -94,6 +106,10 @@ english_agent = Agent(
         "\n"
         "✅ Provide positive and gentle feedback on writing samples.\n"
         "🌟 Always cheer the student on and make them feel proud of their progress!"
+        "ONLY ANSWER QUESTIONS RELATED TO ENGLISH\n"
+        "Gently refer back to the topic if the student goes off track and suggest a tutor related to the topic asked.\n"
+        "Be friendly, patient and supportive to the student at all times\n"
+        "Use emojis to make it fun and engaging\n"
     )
 )
 
@@ -106,6 +122,14 @@ general_tutor_agent = Agent(
         "2. Adapt explanations accordingly\n"
         "3. Connect new concepts to prior knowledge\n"
         "4. Use the 'I do, we do, you do' scaffolding approach\n"
+        "5. Encourage questions and curiosity\n"
+        "6. Use real-world examples to make learning relevant\n"
+        "7. Provide constructive feedback and praise\n"
+        "8. Use a variety of resources (videos, articles, interactive tools)\n"
+        "9. Encourage self-reflection and goal-setting\n"
+        "10. Foster a growth mindset by celebrating effort and progress\n"
+        "11. Use humor and storytelling to make learning enjoyable\n"
+        "12. Be patient and understanding, especially with challenging topics\n"
         "\n"
         "CROSS-CURRICULAR CONNECTIONS:\n"
         "- Show how math applies to geography (e.g., map scales)\n"
@@ -132,7 +156,18 @@ history_agent = Agent(
         "🌍 Connect historical events to modern contexts\n"
         "📅 Use timelines and cause/effect explanations\n"
         "🧭 Highlight diverse perspectives and primary sources\n"
-        "✨ Make history come alive with stories and relevance to students' lives"
+        "✨ Make history come alive with stories and relevance to students' lives\n"
+        "🔍 Encourage critical thinking and analysis of sources\n" \
+        "📖 Use engaging narratives and anecdotes\n"
+        "📝 Provide writing prompts for essays and projects\n"
+        "📊 Use maps, charts, and visuals to enhance understanding\n"
+        "💡 Use analogies to explain complex concepts\n"
+        "🎨 Use visual aids to enhance understanding\n"
+        "📝 Encourage note-taking and summarization\n"
+        " ONLY ANSWER QUESTIONS RELATED TO HISTORY\n"
+        "Gently refer back to the topic if the student goes off track and suggest a tutor related to the topic asked.\n"
+        "Be friendly, patient and supportive to the student at all times\n"
+        "Use emojis to make it fun and engaging\n"
     )
 )
 
@@ -146,7 +181,19 @@ geography_agent = Agent(
         "🌦️ Explain weather systems and climate change\n"
         "🏙️ Discuss urbanization and settlement patterns\n"
         "🌱 Teach about ecosystems and sustainability\n"
-        "📊 Use maps, diagrams and real-world examples"
+        "📊 Use maps, diagrams and real-world examples\n"
+        "🔍 Encourage critical thinking about global issues\n" \
+        "📈 Use data and statistics to support learning\n"
+        "🌍 Relate geography to current events and local context\n"
+        "📚 Provide resources for further exploration\n"
+        "💡 Use analogies to explain complex concepts\n"
+        "🎨 Use visual aids to enhance understanding\n"
+        "📝 Encourage note-taking and summarization\n"
+        "🔄 Use the 'predict-observe-explain' model for experiments\n"
+        "ONLY ANSWER QUESTIONS RELATED TO GEOGRAPHY\n"
+        "Gently refer back to the topic if the student goes off track and suggest a tutor related to the topic asked.\n"
+        "Be friendly, patient and supportive to the student at all times\n"
+        "Use emojis to make it fun and engaging\n"
     )
 )
 
@@ -158,6 +205,16 @@ physical_science_agent = Agent(
         "1. Always relate concepts to practical South African examples (e.g., energy to Eskom)\n"
         "2. Use the predict-observe-explain model for experiments\n"
         "3. Emphasize the scientific method in all explanations\n"
+        "4. Encourage critical thinking and problem-solving\n"
+        "5. Use analogies to explain complex concepts\n"
+        "6. Provide real-world applications of scientific principles\n"
+        "7. Use diagrams and visual aids to enhance understanding\n"
+        "8. ONLY ANSWER QUESTIONS RELATED TO PHYSICAL SCIENCE\n"
+        "9. Gently refer back to the topic if the student goes off track and suggest a tutor related to the topic asked.\n"
+        "10. Be friendly, patient and supportive to the student at all times\n"
+        "11. Use emojis to make it fun and engaging\n"
+        "12. Provide links where necessary. Only provide valid links that are still operational\n"
+
         "\n"
         "FORMATTING REQUIREMENTS:\n"
         "- Chemical formulas: $\\mathrm{H_2O}$\n"
@@ -340,7 +397,10 @@ def get_conversations():
             Conversation,
             db.func.max(Message.created_at).label('last_activity')
         ).join(Message)\
-         .filter(Conversation.user_id == user_id)\
+         .filter(
+             Conversation.user_id == user_id,
+             Conversation.is_active == True  
+         )\
          .group_by(Conversation.id)\
          .order_by(db.desc('last_activity'))\
          .all()
@@ -351,11 +411,13 @@ def get_conversations():
             "mode": conv.mode,
             "sub_mode": conv.sub_mode,
             "created_at": conv.created_at.isoformat(),
-            "last_activity": last_activity.isoformat() if last_activity else conv.created_at.isoformat()
+            "last_activity": last_activity.isoformat() if last_activity else conv.created_at.isoformat(),
+            "is_active": conv.is_active
         } for conv, last_activity in conversations])
     except Exception as e:
         print(f"Error fetching conversations: {e}")
         return jsonify({"error": "Failed to fetch conversations"}), 500
+
     
 
 @chat_bp.route("/conversations", methods=["POST"])
@@ -363,6 +425,11 @@ def get_conversations():
 def create_conversation():
     user_id = get_jwt_identity()
     data = request.json
+    
+    # Validate required fields
+    if not data or 'mode' not in data:
+        return jsonify({"error": "Missing required field: mode"}), 400
+        
     mode = data.get('mode')
     sub_mode = data.get('sub_mode')
     
@@ -371,19 +438,25 @@ def create_conversation():
         'study_tips': []
     }
     
-    if not mode or mode not in valid_modes:
+    if mode not in valid_modes:
         return jsonify({"error": "Invalid mode"}), 400
-    if mode == 'tutor' and (not sub_mode or sub_mode not in valid_modes['tutor']):
-        return jsonify({"error": "Invalid tutor type"}), 400
+        
+    if mode == 'tutor':
+        if not sub_mode or sub_mode not in valid_modes['tutor']:
+            return jsonify({"error": "Invalid tutor type"}), 400
 
     try:
         # Check for existing active conversation in this mode/sub_mode
-        existing = Conversation.query.filter_by(
+        query = Conversation.query.filter_by(
             user_id=user_id,
             mode=mode,
-            sub_mode=sub_mode if mode == 'tutor' else None,
             is_active=True
-        ).first()
+        )
+        
+        if mode == 'tutor':
+            query = query.filter_by(sub_mode=sub_mode)
+            
+        existing = query.first()
         
         if existing:
             return jsonify({
@@ -398,9 +471,11 @@ def create_conversation():
             'general': "General Tutor",
             'history': "History Tutor",
             'geography': "Geography Tutor",
-            'physical_science': "Physical Science Tutor"
+            'physical_science': "Physical Science Tutor",
+            'study_tips': "Study Tips"
         }
-        title = title_map.get(sub_mode, "Tutor Session") if mode == 'tutor' else "Study Tips"
+        
+        title = title_map.get(sub_mode, "Tutor Session") if mode == 'tutor' else title_map.get(mode, "New Chat")
         
         new_conversation = Conversation(
             user_id=user_id,
@@ -410,7 +485,7 @@ def create_conversation():
             is_active=True
         )
         db.session.add(new_conversation)
-        db.session.flush()
+        db.session.flush()  # Get the ID before commit
         
         # Add system message based on mode
         agent_map = {
@@ -436,13 +511,16 @@ def create_conversation():
             "id": new_conversation.id,
             "title": new_conversation.title,
             "mode": new_conversation.mode,
-            "sub_mode": new_conversation.sub_mode
+            "sub_mode": new_conversation.sub_mode,
+            "is_active": new_conversation.is_active,
+            "created_at": new_conversation.created_at.isoformat()
         }), 201
         
     except Exception as e:
         db.session.rollback()
         print(f"Error creating conversation: {e}")
         return jsonify({"error": "Failed to create conversation"}), 500
+    
     
 
 @chat_bp.route("/conversations/<int:conversation_id>", methods=["GET"], endpoint="get_conversation")
