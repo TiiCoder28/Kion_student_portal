@@ -12,8 +12,8 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     CORS(app, resources={
-    r"/auth/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]},
-    r"/api/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}
+    r"/auth/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS", "DELETE"], "allow_headers": ["Content-Type", "Authorization"]},
+    r"/api/*": {"origins": "http://localhost:5173", "methods": ["POST", "GET", "OPTIONS", "DELETE"], "allow_headers": ["Content-Type", "Authorization"]}
 },  supports_credentials=True)  
     exposed_headers = ['Authorization', 'Content-Type']
     app.after_request(lambda response: (response.headers.add('Access-Control-Expose-Headers', ', '.join(exposed_headers)), response)[1])
@@ -39,32 +39,16 @@ def create_app():
 
     # Initialize database
     db.init_app(app)
-
-    # Debug: Verify database connection
-    with app.app_context():
-        try:
-            with db.engine.connect() as connection:
-                result = connection.exec_driver_sql("SELECT current_database();")
-                db_name = result.scalar()
-                print(f"✅ Connected to database: {db_name}")
-        except Exception as e:
-            print(f"❌ ERROR: Could not connect to database! Error: {str(e)}")
-            exit(1)
-
-    # Debug: Check registered models
-    with app.app_context():
-        try:
-            for table in db.metadata.tables.values():
-                print(f"✅ Found table: {table.name}")
-        except Exception as e:
-            print(f"❌ ERROR: Could not check registered models! Error: {str(e)}")
-
-    # Import blueprints AFTER initializing db
+    jwt.init_app(app)
+ 
     from app.routes import chat_bp
     from auth.routes import auth_bp
 
     app.register_blueprint(chat_bp, url_prefix="/api")
     app.register_blueprint(auth_bp, url_prefix="/auth")
+
+    with app.app_context():
+        db.create_all()
 
     return app
 
