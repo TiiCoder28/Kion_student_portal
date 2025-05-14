@@ -114,7 +114,7 @@
             class="message-container">
             <div :class="['message', message.role === 'assistant' ? 'ai-message' : 'user-message']">
               <div class="avatar" :class="message.role">
-                <span v-if="message.role === 'assistant'">AI</span>
+                <span v-if="message.role === 'assistant'"><img src="https://cdn-icons-png.flaticon.com/128/3273/3273828.png" alt="" height="50" width="50" /></span>
                 <span v-else>{{ userInitials }}</span>
               </div>
               <div class="message-content" v-html="message.formattedContent"></div>
@@ -122,7 +122,7 @@
           </div>
           <div v-if="isTyping" class="message-container">
             <div class="message ai-message">
-              <div class="avatar ai">AI</div>
+              <div class="avatar ai"><img src="https://cdn-icons-png.flaticon.com/128/3273/3273828.png" alt="" height="50" width="50" /></div>
               <div class="message-content">
                 <div class="typing-loader">
                   <span></span>
