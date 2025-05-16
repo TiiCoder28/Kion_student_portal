@@ -10,6 +10,11 @@
       <!-- Right Pane (Login Form) -->
       <div class="right-pane">
         <div class="form-container">
+          <StatusView
+            :text="statusView.text"
+            :type="statusView.type"
+            :visible="statusView.visible"
+          />
           <h2 class="form-title">Welcome Back</h2>
           <p class="form-subtitle">Login to access your account</p>
   
@@ -64,6 +69,7 @@
   import { ref, onMounted } from "vue";
   import axios from "axios";
   import { useRouter } from "vue-router";
+  import StatusView from "./StatusView.vue";
   
   const email = ref("");
   const phoneNumber = ref("");
@@ -73,6 +79,24 @@
   const countries = ref([]);
   const showPassword = ref(false);
   const router = useRouter();
+
+  const statusView = ref({
+text: '',
+type: '', // 'success' or 'error'
+visible: false
+});
+
+const showStatusView = (text, type = 'success', duration = 5000) => {
+statusView.value = {
+  text,
+  type,
+  visible: true
+};
+// Auto-hide after duration
+setTimeout(() => {
+  statusView.value.visible = false;
+}, duration);
+};
   
 const getEmojiFlag = (countryCode) => {
   return String.fromCodePoint(...[...countryCode.toUpperCase()].map(c => 0x1F1A5 + c.charCodeAt(0)));
@@ -133,11 +157,17 @@ const getEmojiFlag = (countryCode) => {
         const { access_token, user } = response.data;
         localStorage.setItem("access_token", access_token);
         localStorage.setItem("user", JSON.stringify(user));
-        router.push("/dashboard");
+        showStatusView("Login successful!", "success");
+        // Wait for 2 seconds before redirecting
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 2000);
+        //router.push("/dashboard");
       }
     } catch (error) {
       console.error("Login failed:", error.response?.data || error.message);
-      alert(error.response?.data?.error || "Login failed. Please try again.");
+      //alert(error.response?.data?.error || "Login failed. Please try again.");
+      showStatusView(error.response?.data?.error || "Login failed. Please try again.", "error");
     }
   };
   </script>

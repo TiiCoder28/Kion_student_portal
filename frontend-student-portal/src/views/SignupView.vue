@@ -10,6 +10,11 @@
     <!-- Right Pane (Signup Form) -->
     <div class="right-pane">
       <div class="form-container">
+      <StatusView
+        :text="statusView.text"
+        :type="statusView.type"
+        :visible="statusView.visible"
+      />
         <h2 class="form-title">Create Your Account</h2>
         <p class="form-subtitle">Enter your details to get started</p>
 
@@ -81,6 +86,7 @@
   import { ref, onMounted } from "vue";
   import axios from "axios";
   import { useRouter } from "vue-router";
+  import StatusView from "./StatusView.vue";
   
   const firstName = ref("");
   const lastName = ref("");
@@ -95,6 +101,24 @@
   const showPassword = ref(false);
   const showConfirmPassword = ref(false);
   const router = useRouter();
+
+   const statusView = ref({
+text: '',
+type: '', // 'success' or 'error'
+visible: false
+});
+
+const showStatusView = (text, type = 'success', duration = 5000) => {
+statusView.value = {
+  text,
+  type,
+  visible: true
+};
+// Auto-hide after duration
+setTimeout(() => {
+  statusView.value.visible = false;
+}, duration);
+};
   
 const getEmojiFlag = (countryCode) => {
   return String.fromCodePoint(...[...countryCode.toUpperCase()].map(c => 0x1F1A5 + c.charCodeAt(0)));
@@ -138,11 +162,13 @@ const getEmojiFlag = (countryCode) => {
   const handleSignup = async () => {
     // Basic validation
     if (authMethod.value === 'email' && email.value !== confirmEmail.value) {
-      alert("Emails do not match!");
+      //alert("Emails do not match!");
+      showStatusView("Emails do not match!", "error");
       return;
     }
     if (password.value !== confirmPassword.value) {
-      alert("Passwords do not match!");
+      //alert("Passwords do not match!");
+      showStatusView("Passwords do not match!", "error");
       return;
     }
   
@@ -166,11 +192,17 @@ const getEmojiFlag = (countryCode) => {
         const { access_token, user } = response.data;
         localStorage.setItem("access_token", access_token);
         localStorage.setItem("user", JSON.stringify(user));
-        router.push("/dashboard");
+        showStatusView("Signup successful!", "success");
+        // Wait for 2 seconds before redirecting
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 2000);
+        //router.push("/dashboard");
       }
     } catch (error) {
       console.error("Signup error:", error.response?.data || error.message);
-      alert(error.response?.data?.error || "Signup failed. Please try again.");
+      //alert(error.response?.data?.error || "Signup failed. Please try again.");
+      showStatusView(error.response?.data?.error || "Signup failed. Please try again.", "error");
     }
   };
   </script>

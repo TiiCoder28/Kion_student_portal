@@ -40,6 +40,17 @@
           </div>
         </div>
         
+        <!-- Custom Confirmation Dialog -->
+        <div v-if="showConfirmDialog" class="confirm-dialog-overlay">
+          <div class="confirm-dialog">
+            <p>{{ confirmDialogMessage }}</p>
+            <div class="dialog-actions">
+              <button class="btn btn-primary" @click="handleConfirm">Yes</button>
+              <button class="btn" @click="handleCancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Conversation Viewer Panel -->
         <div v-if="selectedConversation" class="conversation-viewer">
           <div class="viewer-header">
@@ -86,6 +97,26 @@
   const selectedConversation = ref(null);
   const messages = ref([]);
   const loading = ref(false);
+  const showConfirmDialog = ref(false);
+const confirmDialogMessage = ref("");
+let confirmDialogAction = null;
+
+const openConfirmDialog = (message, action) => {
+  confirmDialogMessage.value = message;
+  confirmDialogAction = action;
+  showConfirmDialog.value = true;
+};
+
+const handleConfirm = () => {
+  showConfirmDialog.value = false;
+  if (typeof confirmDialogAction === "function") {
+    confirmDialogAction();
+  }
+};
+
+const handleCancel = () => {
+  showConfirmDialog.value = false;
+};
   
   // User data (you might want to fetch this or get from store)
   const user = computed(() => ({
@@ -160,27 +191,28 @@ const loadConversation = async (conversationId) => {
 };
   
   const deleteConversation = async (conversationId) => {
-    if (!confirm("Are you sure you want to permanently delete this conversation?")) return;
-    
-    try {
-      const token = localStorage.getItem("access_token");
-      await axios.delete(
-        `${API_BASE_URL}/api/conversations/${conversationId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      // Remove from list
-      archivedConversations.value = archivedConversations.value.filter(
-        c => c.id !== conversationId
-      );
-      
-      // Clear viewer if viewing deleted conversation
-      if (selectedConversation.value?.id === conversationId) {
-        selectedConversation.value = null;
+    //if (!confirm("Are you sure you want to permanently delete this conversation?")) return;
+    openConfirmDialog("Are you sure you want to permanently delete this conversation?", async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        await axios.delete(
+          `${API_BASE_URL}/api/conversations/${conversationId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        // Remove from list
+        archivedConversations.value = archivedConversations.value.filter(
+          c => c.id !== conversationId
+        );
+        
+        // Clear viewer if viewing deleted conversation
+        if (selectedConversation.value?.id === conversationId) {
+          selectedConversation.value = null;
+        }
+      } catch (error) {
+        console.error("Error deleting conversation:", error);
       }
-    } catch (error) {
-      console.error("Error deleting conversation:", error);
-    }
+    });
   };
   
   const formatDate = (dateString) => {
@@ -211,6 +243,41 @@ const loadConversation = async (conversationId) => {
   </script>
   
   <style scoped>
+  .confirm-dialog-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.confirm-dialog {
+  background: #fff;
+  padding: 2rem;
+  border-radius: 10px;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  text-align: center;
+}
+.dialog-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+.btn {
+  padding: 0.5em 1.2em;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+}
+.btn-primary {
+  background: #1b408d;
+  color: #fff;
+}
+
   .archived-chats-container {
     max-width: 1200px;
     margin: 0 auto;

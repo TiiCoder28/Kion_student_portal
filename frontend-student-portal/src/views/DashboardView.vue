@@ -67,6 +67,16 @@
       </div>
     </div>
 
+    <!-- Confirmation Dialog -->
+    <div v-if="showConfirmDialog" class="confirm-dialog-overlay">
+      <div class="confirm-dialog">
+        <p>{{ confirmDialogMessage }}</p>
+        <div class="dialog-actions">
+          <button class="btn btn-primary" @click="handleConfirm">Yes</button>
+          <button class="btn" @click="handleCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
     <!-- Main Chat Area -->
     <div class="main-content" :class="{ 'sidebar-collapsed': !sidebarOpen }">
       <div v-if="loading" class="loading-state">
@@ -95,6 +105,11 @@
         </h2>
         
         <div v-if="showWelcomeMessage" class="welcome-message">
+          <StatusView
+            :text="statusView.text"
+            :type="statusView.type"
+            :visible="statusView.visible" 
+          />
           <h3>Welcome, {{ user.firstName }}! 👋. My name is Thuto</h3>
           <p>Get started by choosing a conversation from the sidebar or starting a new chat with one of our tutors</p>
           <div class="welcome-illustration">
@@ -230,6 +245,7 @@ import axios from "axios";
 import { useRouter } from "vue-router";
 import { marked } from 'marked';
 import 'mathjax/es5/tex-mml-chtml';
+import StatusView from "./StatusView.vue";
 
 
 const API_BASE_URL = "http://localhost:5000";
@@ -240,6 +256,24 @@ const showModeDialog = ref(false);
 const sidebarOpen = ref(false);
 const showScrollButton = ref(false);
 const selectedMode = ref(null);
+
+ const statusView = ref({
+text: '',
+type: '', // 'success' or 'error'
+visible: false
+});
+
+const showStatusView = (text, type = 'success', duration = 5000) => {
+statusView.value = {
+  text,
+  type,
+  visible: true
+};
+// Auto-hide after duration
+setTimeout(() => {
+  statusView.value.visible = false;
+}, duration);
+};
 
 const navigateToArchived = () => {
   router.push('/archived-chats');
@@ -260,8 +294,26 @@ const conversations = reactive([]);
 const isTyping = ref(false);
 const visiblePreviousChats = ref(5);
 const showUserMenu = ref(false);
+const showConfirmDialog = ref(false);
+const confirmDialogMessage = ref("")
+let confirmDialogAction = null;
 
+const openConfirmDialog = (message, action) => {
+  confirmDialogMessage.value = message;
+  confirmDialogAction = action;
+  showConfirmDialog.value = true;
+};
 
+const handleConfirm = () => {
+  showConfirmDialog.value = false;
+  if (typeof confirmDialogAction === 'function') {
+    confirmDialogAction();
+  }
+};
+
+const handleCancel = () => {
+  showConfirmDialog.value = false;
+};
 
 const userInitials = computed(() => {
   return `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`;
@@ -280,9 +332,10 @@ const showWelcomeMessage = computed(() => {
 });
 
 const confirmClearChat = () => {
-  if (confirm("Are you sure you want to clear this chat? The conversation will be archived and a new one will be created.")) {
-    clearAndRestartChat();
-  }
+  // if (confirm("Are you sure you want to clear this chat? The conversation will be archived and a new one will be created.")) {
+  //   clearAndRestartChat();
+  // }
+  openConfirmDialog("Are you sure you want to clear this chat? The conversation will be archived and a new one will be created.", clearAndRestartChat);
 };
 
 const clearAndRestartChat = async () => {
@@ -328,7 +381,8 @@ const clearAndRestartChat = async () => {
   } catch (error) {
     console.error("Error clearing chat:", error);
     // Show error to user
-    alert("Failed to clear chat. Please try again.");
+    //alert("Failed to clear chat. Please try again.");
+    showStatusView("Failed to clear chat. Please try again.", "error");
   }
 };
 
@@ -941,6 +995,32 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* Custom Confirmation Dialog Styles */
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.confirm-dialog {
+  background: #fff;
+  padding: 2rem;
+  border-radius: 10px;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  text-align: center;
+}
+.dialog-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
 .dashboard-container {
   display: flex;
   height: 100vh;
